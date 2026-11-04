@@ -162,6 +162,26 @@ export function KioscoPuestoView() {
     return () => clearInterval(timer);
   }, [emparejado, qrData]);
 
+  // Sonido institucional de apertura y activación de cédula
+  const reproducirChimeActivacion = () => {
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const notas = [523.25, 659.25, 783.99]; // Acorde C5 - E5 - G5
+      notas.forEach((freq, idx) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime + idx * 0.12);
+        gain.gain.setValueAtTime(0.2, audioCtx.currentTime + idx * 0.12);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + idx * 0.12 + 0.45);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(audioCtx.currentTime + idx * 0.12);
+        osc.stop(audioCtx.currentTime + idx * 0.12 + 0.45);
+      });
+    } catch {}
+  };
+
   // 5. Polling de Verificación del QR: Detecta cuando el docente lo autoriza
   useEffect(() => {
     if (emparejado || !qrData?.qr_token) return;
@@ -170,6 +190,7 @@ export function KioscoPuestoView() {
       try {
         const res = await puestosKioscoService.verificarQr(qrData.qr_token);
         if (res.status === 'APPROVED' && res.token_sesion && res.puesto_id && config) {
+          reproducirChimeActivacion();
           setPuestoId(res.puesto_id);
           setTokenSesion(res.token_sesion);
           setEmparejado(true);
@@ -187,12 +208,12 @@ export function KioscoPuestoView() {
       } catch {
         // Ignorar errores transitorios de polling
       }
-    }, 2000);
+    }, 1500);
 
     return () => clearInterval(interval);
   }, [emparejado, qrData, config]);
 
-  // 6. Polling de Sincronización y Heartbeat cuando está EMPAREJADO (ADR-005 & Invariante I10)
+  // 6. Polling de Sincronización y Heartbeat en Tiempo Real (1 segundo) (ADR-005 & Invariante I10)
   useEffect(() => {
     if (!emparejado || !puestoId || !tokenSesion) return;
 
@@ -204,9 +225,15 @@ export function KioscoPuestoView() {
         const res = await puestosKioscoService.sincronizar(puestoId, tokenSesion);
         setLastHeartbeat(new Date());
 
-        // Si el docente asignó un elector (RESERVADO con token_voto activo)
+        // Si el docente confirmó la habilitación: ACTIVACIÓN AUTOMÁTICA DE CÉDULA
         if (res.estado === 'RESERVADO' && res.token_voto) {
+          if (!tokenVotoActivo) {
+            reproducirChimeActivacion();
+          }
           setTokenVotoActivo(res.token_voto);
+        } else if (res.estado === 'LIBRE' && tokenVotoActivo) {
+          // Si el docente canceló la habilitación o el voto concluyó
+          setTokenVotoActivo(null);
         }
       } catch (err: any) {
         if (err.message && err.message.includes('Token de sesión no válido')) {
@@ -215,10 +242,10 @@ export function KioscoPuestoView() {
       } finally {
         sincronizandoRef.current = false;
       }
-    }, 2500);
+    }, 1000);
 
     return () => clearInterval(syncInterval);
-  }, [emparejado, puestoId, tokenSesion]);
+  }, [emparejado, puestoId, tokenSesion, tokenVotoActivo]);
 
   const handleCopiarToken = () => {
     if (!qrData?.qr_token) return;

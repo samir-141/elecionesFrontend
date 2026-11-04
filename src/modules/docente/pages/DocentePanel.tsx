@@ -98,6 +98,7 @@ export function DocentePanel() {
     puestoId: string;
     segundosRestantes: number;
   } | null>(null);
+  const [votoCompletadoFeedback, setVotoCompletadoFeedback] = useState<string | null>(null);
 
   // 1. Cargar Puestos reales desde el Backend
   const cargarPuestosBackend = async (aulaId: string) => {
@@ -117,19 +118,31 @@ export function DocentePanel() {
         };
       });
       setPuestos(mapeados);
+
+      // Si había una reserva en curso y el puesto ya se liberó, celebrar que votó
+      setReservaActiva((prev) => {
+        if (!prev) return null;
+        const puestoActual = mapeados.find((p) => p.id === prev.puestoId);
+        if (puestoActual && puestoActual.estado === 'LIBRE') {
+          setVotoCompletadoFeedback(`¡Voto completado con éxito en el Puesto #${prev.puestoNumero}! Puesto liberado para el siguiente elector.`);
+          setTimeout(() => setVotoCompletadoFeedback(null), 6000);
+          return null;
+        }
+        return prev;
+      });
     } catch {
       // Ignorar errores transitorios de red
     }
   };
 
-  // 2. Intervalo continuo de recarga de puestos cada 3 segundos
+  // 2. Intervalo continuo de recarga de puestos cada 2.5 segundos
   useEffect(() => {
     if (!docente?.aula?.id) return;
 
     cargarPuestosBackend(docente.aula.id);
     const interval = setInterval(() => {
       cargarPuestosBackend(docente.aula.id);
-    }, 3000);
+    }, 2500);
 
     return () => clearInterval(interval);
   }, [docente]);
@@ -349,6 +362,14 @@ export function DocentePanel() {
           <LogOut className="w-3.5 h-3.5 mr-1" /> Salir
         </Button>
       </div>
+
+      {/* Alerta de Voto Concluido Exitosamente */}
+      {votoCompletadoFeedback && (
+        <div className="bg-emerald-600 text-white p-3.5 rounded-2xl shadow-md flex items-center gap-2.5 animate-in fade-in zoom-in-95">
+          <CheckCircle2 className="w-5 h-5 text-emerald-200 shrink-0" />
+          <span className="text-xs font-bold leading-snug">{votoCompletadoFeedback}</span>
+        </div>
+      )}
 
       {/* Banner de Reserva Activa en Curso */}
       {reservaActiva && (
