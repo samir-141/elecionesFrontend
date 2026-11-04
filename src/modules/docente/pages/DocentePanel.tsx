@@ -1,0 +1,670 @@
+import { useState, useEffect, useRef } from 'react';
+import { DocenteLogin } from '../components/DocenteLogin';
+import { DniScannerModal } from '../components/DniScannerModal';
+import { ElectorFichaModal } from '../components/ElectorFichaModal';
+import { RealtimeQrScanner } from '../components/RealtimeQrScanner';
+import {
+  habilitacionApiService,
+  ElectorConsultado,
+  HabilitacionConfirmada,
+} from '../services/habilitacion.service';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../../components/ui/card';
+import { Button } from '../../../components/ui/button';
+import { Badge } from '../../../components/ui/badge';
+import {
+  School,
+  Monitor,
+  QrCode,
+  LogOut,
+  RefreshCw,
+  CheckCircle2,
+  AlertTriangle,
+  Barcode,
+  Clock,
+  Ban,
+  ArrowRight,
+  Camera,
+  Video,
+  X,
+} from 'lucide-react';
+import { BrowserQRCodeReader } from '@zxing/browser';
+
+interface PuestoAula {
+  id: string;
+  numero_puesto: number;
+  estado: 'LIBRE' | 'RESERVADO' | 'FUERA_SERVICIO';
+  ultimo_heartbeat: string;
+}
+
+export function DocentePanel() {
+  const [docente, setDocente] = useState<{
+    id: string;
+    username: string;
+    aula: { id: string; numero: number; nombre: string };
+  } | null>(() => {
+    try {
+      const saved = sessionStorage.getItem('docente_auth');
+      if (!saved) return null;
+      const parsed = JSON.parse(saved);
+      const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      // Auto-corregir si la sesión tenía un ID no UUID heredado
+      let modified = false;
+      if (!parsed?.aula?.id || !UUID_REGEX.test(parsed.aula.id)) {
+        parsed.aula = {
+          id: '0ac28a85-848a-416f-ac8d-a65bf08abbe8',
+          numero: 1,
+          nombre: 'Mesa 1 (Pabellón A)',
+        };
+        modified = true;
+      }
+      if (!parsed?.id || !UUID_REGEX.test(parsed.id)) {
+        parsed.id = '7385898f-4293-459a-af4f-92b85e0e8c1b';
+        modified = true;
+      }
+      if (modified) {
+        sessionStorage.setItem('docente_auth', JSON.stringify(parsed));
+      }
+      return parsed;
+    } catch {
+      return null;
+    }
+  });
+
+  const [puestos, setPuestos] = useState<PuestoAula[]>([]);
+
+  // Estados del Modal de Emparejamiento por QR
+  const [showPairModal, setShowPairModal] = useState(false);
+  const [qrInput, setQrInput] = useState('');
+  const [pairFeedback, setPairFeedback] = useState<string | null>(null);
+  const [pairError, setPairError] = useState<string | null>(null);
+  const [isPairing, setIsPairing] = useState(false);
+  const [scannerActive, setScannerActive] = useState(true);
+  const [isReadingPhoto, setIsReadingPhoto] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Estados del Flujo de Habilitación
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [fichaOpen, setFichaOpen] = useState(false);
+  const [electorConsultado, setElectorConsultado] = useState<ElectorConsultado | null>(null);
+  const [isConsulting, setIsConsulting] = useState(false);
+  const [isConfirming, setIsConfirming] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+
+  // Estado de Reserva Activa en Pantalla
+  const [reservaActiva, setReservaActiva] = useState<{
+    electorId: string;
+    puestoNumero: number;
+    puestoId: string;
+    segundosRestantes: number;
+  } | null>(null);
+
+  // 1. Cargar Puestos reales desde el Backend
+  const cargarPuestosBackend = async (aulaId: string) => {
+    try {
+      const data = await habilitacionApiService.listarPuestos(aulaId);
+      const mapeados: PuestoAula[] = data.map((p) => {
+        let heartbeatStr = 'Sin señal';
+        if (p.ultimo_heartbeat) {
+          const diffSegundos = Math.floor((Date.now() - new Date(p.ultimo_heartbeat).getTime()) / 1000);
+          heartbeatStr = diffSegundos < 8 ? 'Hace segundos' : `Hace ${diffSegundos}s`;
+        }
+        return {
+          id: p.id,
+          numero_puesto: p.numero_puesto,
+          estado: p.estado,
+          ultimo_heartbeat: heartbeatStr,
+        };
+      });
+      setPuestos(mapeados);
+    } catch {
+      // Ignorar errores transitorios de red
+    }
+  };
+
+  // 2. Intervalo continuo de recarga de puestos cada 3 segundos
+  useEffect(() => {
+    if (!docente?.aula?.id) return;
+
+    cargarPuestosBackend(docente.aula.id);
+    const interval = setInterval(() => {
+      cargarPuestosBackend(docente.aula.id);
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [docente]);
+
+  // 3. Temporizador regresivo para reserva activa (3 min / 180s por defecto)
+  useEffect(() => {
+    if (!reservaActiva) return;
+
+    if (reservaActiva.segundosRestantes <= 0) {
+      if (docente) cargarPuestosBackend(docente.aula.id);
+      setReservaActiva(null);
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setReservaActiva((prev) => (prev ? { ...prev, segundosRestantes: prev.segundosRestantes - 1 } : null));
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [reservaActiva, docente]);
+
+  // Al abrir el modal de emparejamiento, reiniciar estados e iniciar escáner en tiempo real
+  useEffect(() => {
+    if (showPairModal) {
+      setScannerActive(true);
+      setPairError(null);
+      setPairFeedback(null);
+    }
+  }, [showPairModal]);
+
+  const handleQrDetectedRealtime = async (token: string) => {
+    setQrInput(token);
+    await emparejarPuestoConToken(token);
+  };
+
+  // Captura y decodificación de foto directa (funciona en HTTP y HTTPS en todos los móviles)
+  const handleFotoCapturada = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsReadingPhoto(true);
+    setPairError(null);
+
+    try {
+      const objectUrl = URL.createObjectURL(file);
+      const reader = new BrowserQRCodeReader();
+      const result = await reader.decodeFromImageUrl(objectUrl);
+      URL.revokeObjectURL(objectUrl);
+
+      if (result) {
+        const texto = result.getText().trim();
+        setQrInput(texto);
+        await emparejarPuestoConToken(texto);
+      } else {
+        throw new Error('No se detectó contenido en el QR');
+      }
+    } catch {
+      setPairError(
+        'No se detectó un código QR legible en la foto. Intenta tomarla de nuevo más cerca y enfocada, o ingresa el código manual.',
+      );
+    } finally {
+      setIsReadingPhoto(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  if (!docente) {
+    return (
+      <DocenteLogin
+        onLoginSuccess={(d) => {
+          sessionStorage.setItem('docente_auth', JSON.stringify(d));
+          setDocente(d);
+        }}
+      />
+    );
+  }
+
+  // 1. Escaneo / Consulta de DNI del Elector
+  const handleDniDetected = async (dni: string, origen: 'CAMARA' | 'MANUAL') => {
+    setIsConsulting(true);
+    setScanError(null);
+    try {
+      const elector = await habilitacionApiService.consultarDni(
+        docente.aula.id,
+        docente.id,
+        dni,
+        origen,
+      );
+      setElectorConsultado(elector);
+      setScannerOpen(false);
+      setFichaOpen(true);
+    } catch (err: any) {
+      setScanError(err.message || 'Error al validar el DNI del elector.');
+    } finally {
+      setIsConsulting(false);
+    }
+  };
+
+  // 2. Confirmación y Reserva Atómica con Row Lock (ADR-006)
+  const handleConfirmarHabilitacion = async (electorId: string) => {
+    setIsConfirming(true);
+    setConfirmError(null);
+    try {
+      const res: HabilitacionConfirmada = await habilitacionApiService.confirmarHabilitacion(
+        docente.aula.id,
+        docente.id,
+        electorId,
+      );
+
+      // Recargar puestos en vivo
+      await cargarPuestosBackend(docente.aula.id);
+
+      // Activar aviso y cuenta regresiva
+      setReservaActiva({
+        electorId,
+        puestoNumero: res.puesto_numero,
+        puestoId: res.puesto_id,
+        segundosRestantes: res.tiempo_reserva_segundos,
+      });
+
+      setFichaOpen(false);
+      setElectorConsultado(null);
+    } catch (err: any) {
+      setConfirmError(err.message || 'Error al reservar el puesto de votación.');
+    } finally {
+      setIsConfirming(false);
+    }
+  };
+
+  // 3. Cancelación manual de la reserva
+  const handleCancelarReserva = async () => {
+    if (!reservaActiva) return;
+    try {
+      await habilitacionApiService.cancelarHabilitacion(
+        docente.aula.id,
+        docente.id,
+        reservaActiva.electorId,
+        'Cancelado manualmente por el docente en panel',
+      );
+
+      await cargarPuestosBackend(docente.aula.id);
+      setReservaActiva(null);
+    } catch (err: any) {
+      alert(err.message || 'Error al cancelar la reserva');
+    }
+  };
+
+  // 4. Emparejar Puesto Real mediante el Código QR del Kiosco (por token directo o foto)
+  const emparejarPuestoConToken = async (token: string) => {
+    if (!token.trim()) return;
+
+    setIsPairing(true);
+    setPairError(null);
+    setPairFeedback(null);
+    try {
+      const res = await habilitacionApiService.emparejarPuesto(
+        docente.aula.id,
+        docente.id,
+        token.trim(),
+      );
+
+      setPairFeedback(`¡Puesto #${res.numero_puesto} validado y activado exitosamente en ${docente.aula.nombre}!`);
+      setQrInput('');
+      await cargarPuestosBackend(docente.aula.id);
+
+      setTimeout(() => {
+        setShowPairModal(false);
+        setPairFeedback(null);
+      }, 2000);
+    } catch (err: any) {
+      setPairError(err.message || 'Error al emparejar el puesto con el código QR.');
+    } finally {
+      setIsPairing(false);
+    }
+  };
+
+  const handleEmparejarPuesto = async () => {
+    await emparejarPuestoConToken(qrInput);
+  };
+
+  const handleCerrarSesion = () => {
+    sessionStorage.removeItem('docente_auth');
+    setDocente(null);
+  };
+
+  const puestosLibres = puestos.filter((p) => p.estado === 'LIBRE').length;
+
+  const formatoTiempo = (segundos: number) => {
+    const mins = Math.floor(segundos / 60);
+    const secs = segundos % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div className="max-w-lg mx-auto space-y-4 py-2">
+      {/* Tarjeta de Aula Asignada */}
+      <div className="bg-emerald-900 text-white p-4 sm:p-5 rounded-2xl shadow-sm flex items-center justify-between">
+        <div className="flex items-center space-x-3">
+          <div className="w-12 h-12 rounded-xl bg-emerald-800 flex items-center justify-center font-bold text-lg shadow-inner">
+            <School className="w-6 h-6 text-emerald-200" />
+          </div>
+          <div>
+            <div className="text-[11px] uppercase tracking-wider text-emerald-300 font-bold">Docente de Aula</div>
+            <h2 className="text-lg font-black">{docente.aula.nombre}</h2>
+            <p className="text-xs text-emerald-200">Usuario: {docente.username}</p>
+          </div>
+        </div>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleCerrarSesion}
+          className="text-xs border-emerald-700 bg-emerald-800/80 text-emerald-100 hover:bg-emerald-800"
+        >
+          <LogOut className="w-3.5 h-3.5 mr-1" /> Salir
+        </Button>
+      </div>
+
+      {/* Banner de Reserva Activa en Curso */}
+      {reservaActiva && (
+        <Card className="border-2 border-amber-500 bg-amber-50 shadow-md animate-in fade-in slide-in-from-top-2">
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
+                <Clock className="w-4 h-4 text-amber-700 animate-pulse" /> Reserva Activa en Proceso
+              </span>
+              <span className="font-mono text-sm font-bold bg-amber-200 text-amber-950 px-2 py-0.5 rounded">
+                Expira en: {formatoTiempo(reservaActiva.segundosRestantes)}
+              </span>
+            </div>
+
+            <div className="bg-white p-3 rounded-xl border border-amber-200 flex items-center justify-between">
+              <div>
+                <span className="text-[10px] text-slate-500 font-bold block uppercase">Destino</span>
+                <span className="text-xl font-black text-slate-900 flex items-center gap-1">
+                  Puesto #{reservaActiva.puestoNumero} <ArrowRight className="w-4 h-4 text-emerald-700" />
+                </span>
+              </div>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleCancelarReserva}
+                className="text-xs font-semibold bg-red-600 hover:bg-red-700"
+              >
+                <Ban className="w-3.5 h-3.5 mr-1" /> Cancelar Reserva
+              </Button>
+            </div>
+            <p className="text-[11px] text-amber-800 leading-tight">
+              Indique al estudiante que se acerque al Puesto #{reservaActiva.puestoNumero} para emitir su voto.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Monitor en Vivo de Puestos del Aula */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <Monitor className="w-5 h-5 text-emerald-700" />
+              <CardTitle className="text-base font-bold">Puestos del Aula ({puestos.length})</CardTitle>
+            </div>
+            <Badge variant="outline" className="border-emerald-300 text-emerald-800 font-bold">
+              {puestosLibres} Libre(s)
+            </Badge>
+          </div>
+          <CardDescription className="text-xs">
+            Disponibilidad en tiempo real para asignar electores
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {puestos.length === 0 ? (
+            <div className="text-center py-4 text-xs text-slate-500">
+              No hay puestos registrados en esta mesa. Use el botón inferior para emparejar uno.
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {puestos.map((puesto) => (
+                <div
+                  key={puesto.id}
+                  className={`p-2.5 border rounded-xl flex flex-col justify-between items-center text-center shadow-xs transition-colors ${
+                    puesto.estado === 'LIBRE'
+                      ? 'bg-emerald-50/50 border-emerald-200'
+                      : puesto.estado === 'RESERVADO'
+                      ? 'bg-amber-50/60 border-amber-300'
+                      : 'bg-slate-50 border-slate-200 opacity-60'
+                  }`}
+                >
+                  <div className="text-xs font-extrabold text-slate-900">Puesto #{puesto.numero_puesto}</div>
+                  <div className="my-1">
+                    <Badge
+                      variant={
+                        puesto.estado === 'LIBRE'
+                          ? 'success'
+                          : puesto.estado === 'RESERVADO'
+                          ? 'default'
+                          : 'destructive'
+                      }
+                      className="text-[9px] font-bold px-1.5 py-0.5"
+                    >
+                      {puesto.estado}
+                    </Badge>
+                  </div>
+                  <span className="text-[9px] text-slate-400 font-mono truncate w-full">{puesto.ultimo_heartbeat}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="pt-1">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setPairError(null);
+                setPairFeedback(null);
+                setShowPairModal(true);
+              }}
+              className="w-full text-xs font-semibold border-emerald-300 text-emerald-900 bg-emerald-50/40 hover:bg-emerald-100/80"
+            >
+              <QrCode className="w-4 h-4 mr-1.5 text-emerald-700" />
+              Validar y Emparejar Puesto con QR
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Acción Principal: Habilitación de Estudiantes */}
+      <Card className="border-2 border-emerald-600 bg-gradient-to-b from-emerald-50/40 to-white shadow-sm">
+        <CardHeader className="text-center pb-2">
+          <CardTitle className="text-base font-black text-slate-900">Habilitación de Elector</CardTitle>
+          <CardDescription className="text-xs">
+            Escanea el código de barras o escribe el DNI para autorizar el voto
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Button
+            size="touch"
+            onClick={() => {
+              setScanError(null);
+              setScannerOpen(true);
+            }}
+            disabled={puestosLibres === 0}
+            className={`w-full font-bold text-base shadow-sm ${
+              puestosLibres > 0
+                ? 'bg-emerald-700 hover:bg-emerald-800 text-white'
+                : 'bg-slate-300 text-slate-500 cursor-not-allowed'
+            }`}
+          >
+            <Barcode className="w-5 h-5 mr-2" />
+            {puestosLibres > 0 ? 'Escanear DNI de Estudiante' : 'Sin Puestos Libres (Espere...)'}
+          </Button>
+
+          {puestosLibres === 0 && (
+            <p className="text-xs text-amber-700 text-center font-medium">
+              Todos los puestos de votación están ocupados. Espere a que un alumno termine de votar.
+            </p>
+          )}
+
+          <p className="text-[11px] text-slate-500 text-center">
+            Invariante I17: La cámara lee el DNI en local. Cero almacenamiento o envío de fotos.
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* Modal 1: Escáner / Teclado DNI */}
+      <DniScannerModal
+        isOpen={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onDniDetected={handleDniDetected}
+        isLoading={isConsulting}
+        errorMessage={scanError}
+      />
+
+      {/* Modal 2: Ficha y Confirmación con Checkbox de Presencia */}
+      <ElectorFichaModal
+        isOpen={fichaOpen}
+        elector={electorConsultado}
+        onClose={() => {
+          setFichaOpen(false);
+          setElectorConsultado(null);
+        }}
+        onConfirm={handleConfirmarHabilitacion}
+        isLoading={isConfirming}
+        errorMessage={confirmError}
+      />
+
+      {/* Modal de Validación y Emparejamiento por QR REAL */}
+      {showPairModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <Card className="max-w-md w-full bg-white shadow-xl animate-in fade-in zoom-in-95">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2 text-emerald-800 font-bold text-base">
+                  <QrCode className="w-5 h-5 text-emerald-700" />
+                  <span>Validar Puesto con Código QR</span>
+                </div>
+                <button
+                  onClick={() => setShowPairModal(false)}
+                  className="text-slate-400 hover:text-slate-700"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <CardDescription className="text-xs">
+                Escanea con la cámara de este dispositivo el código QR del Kiosco o ingresa el código.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {pairFeedback ? (
+                <div className="p-3 bg-emerald-50 text-emerald-900 border border-emerald-200 rounded-lg text-xs flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>{pairFeedback}</span>
+                </div>
+              ) : (
+                <>
+                  {pairError && (
+                    <div className="p-3 bg-red-50 text-red-800 border border-red-200 rounded-lg text-xs flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                      <span>{pairError}</span>
+                    </div>
+                  )}
+
+                  {/* Input de archivo nativo como alternativa universal */}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={handleFotoCapturada}
+                  />
+
+                  {/* SECCIÓN PRINCIPAL: Escáner de Video en Tiempo Real con Html5Qrcode */}
+                  {scannerActive ? (
+                    <div className="space-y-2">
+                      <RealtimeQrScanner
+                        onScanSuccess={handleQrDetectedRealtime}
+                        onError={(err) => setPairError(err)}
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setScannerActive(false)}
+                        className="w-full text-xs text-slate-600 hover:bg-slate-100"
+                      >
+                        Pausar Escáner / Ingreso Manual
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 pt-1">
+                      <Button
+                        type="button"
+                        size="touch"
+                        onClick={() => {
+                          setPairError(null);
+                          setScannerActive(true);
+                        }}
+                        className="w-full bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-sm shadow-md flex items-center justify-center gap-2"
+                      >
+                        <Video className="w-5 h-5 text-emerald-200" />
+                        <span>Encender Escáner en Tiempo Real</span>
+                      </Button>
+
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isReadingPhoto || isPairing}
+                        className="w-full text-xs text-slate-700 border-slate-300 hover:bg-slate-50 flex items-center justify-center gap-1.5"
+                      >
+                        <Camera className="w-4 h-4 text-slate-500" />
+                        <span>O tomar foto fija al QR con la cámara</span>
+                      </Button>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Token QR del Puesto (o pegado)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Pega o escanea el token QR del puesto..."
+                      value={qrInput}
+                      onChange={(e) => setQrInput(e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg text-xs font-mono focus:ring-2 focus:ring-emerald-700 focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="bg-slate-50 p-2.5 rounded-lg border text-[11px] text-slate-600 space-y-1">
+                    <p className="flex items-center gap-1 font-semibold text-slate-800">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600" /> Reglas de Emparejamiento:
+                    </p>
+                    <p>• El QR expira a los 5 minutos y se consume en un único uso (ADR-005).</p>
+                    <p>• Invariante I13: Solo puedes autorizar puestos de tu propia aula ({docente.aula.nombre}).</p>
+                  </div>
+
+                  <div className="flex justify-end space-x-2 pt-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowPairModal(false)}
+                      disabled={isPairing}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={handleEmparejarPuesto}
+                      disabled={!qrInput.trim() || isPairing}
+                      className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold"
+                    >
+                      {isPairing ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 mr-1 animate-spin" />
+                          Validando...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5 mr-1" />
+                          Autorizar Puesto
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
