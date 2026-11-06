@@ -26,6 +26,9 @@ import {
   Camera,
   Video,
   X,
+  Users,
+  Flag,
+  Search,
 } from 'lucide-react';
 import { BrowserQRCodeReader } from '@zxing/browser';
 
@@ -37,6 +40,8 @@ interface PuestoAula {
 }
 
 export function DocentePanel() {
+  const [tabActiva, setTabActiva] = useState<'acreditacion' | 'salon' | 'partidos'>('acreditacion');
+
   const [docente, setDocente] = useState<{
     id: string;
     username: string;
@@ -47,22 +52,9 @@ export function DocentePanel() {
       if (!saved) return null;
       const parsed = JSON.parse(saved);
       const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-      // Auto-corregir si la sesión tenía un ID no UUID heredado
-      let modified = false;
-      if (!parsed?.aula?.id || !UUID_REGEX.test(parsed.aula.id)) {
-        parsed.aula = {
-          id: '0ac28a85-848a-416f-ac8d-a65bf08abbe8',
-          numero: 1,
-          nombre: 'Mesa 1 (Pabellón A)',
-        };
-        modified = true;
-      }
-      if (!parsed?.id || !UUID_REGEX.test(parsed.id)) {
-        parsed.id = '7385898f-4293-459a-af4f-92b85e0e8c1b';
-        modified = true;
-      }
-      if (modified) {
-        sessionStorage.setItem('docente_auth', JSON.stringify(parsed));
+      if (!parsed?.id || !parsed?.aula?.id || !UUID_REGEX.test(parsed.id) || !UUID_REGEX.test(parsed.aula.id)) {
+        sessionStorage.removeItem('docente_auth');
+        return null;
       }
       return parsed;
     } catch {
@@ -99,6 +91,61 @@ export function DocentePanel() {
     segundosRestantes: number;
   } | null>(null);
   const [votoCompletadoFeedback, setVotoCompletadoFeedback] = useState<string | null>(null);
+
+  // Estados de Mi Salón
+  const [salonData, setSalonData] = useState<{
+    aula: { id: string; numero: number; nombre: string };
+    total_asignados: number;
+    total_votaron: number;
+    total_pendientes: number;
+    porcentaje_avance: number;
+    electores: Array<{
+      id: string;
+      dni: string;
+      nombres: string;
+      apellidos: string;
+      grado_seccion: string;
+      estado: 'PENDIENTE' | 'HABILITADO' | 'VOTO';
+    }>;
+  } | null>(null);
+  const [busquedaSalon, setBusquedaSalon] = useState('');
+  const [loadingSalon, setLoadingSalon] = useState(false);
+
+  // Estados de Listas Electorales
+  const [partidosList, setPartidosList] = useState<any[]>([]);
+  const [loadingPartidos, setLoadingPartidos] = useState(false);
+
+  const cargarSalonDocente = async () => {
+    if (!docente?.aula?.id) return;
+    try {
+      setLoadingSalon(true);
+      const data = await habilitacionApiService.obtenerSalon(docente.aula.id);
+      setSalonData(data);
+    } catch {
+      // Ignorar fallback
+    } finally {
+      setLoadingSalon(false);
+    }
+  };
+
+  const cargarPartidosDocente = async () => {
+    try {
+      setLoadingPartidos(true);
+      const data = await habilitacionApiService.obtenerPartidos();
+      setPartidosList(data || []);
+    } catch {
+      // Ignorar fallback
+    } finally {
+      setLoadingPartidos(false);
+    }
+  };
+
+  useEffect(() => {
+    if (docente?.aula?.id) {
+      cargarSalonDocente();
+      cargarPartidosDocente();
+    }
+  }, [docente?.aula?.id]);
 
   // 1. Cargar Puestos reales desde el Backend
   const cargarPuestosBackend = async (aulaId: string) => {
@@ -244,7 +291,7 @@ export function DocentePanel() {
   };
 
   // 2. Confirmación y Reserva Atómica con Row Lock (ADR-006)
-  const handleConfirmarHabilitacion = async (electorId: string) => {
+  const handleConfirmarHabilitacion = async (electorId: string, puestoIdDeseado?: string) => {
     setIsConfirming(true);
     setConfirmError(null);
     try {
@@ -252,10 +299,12 @@ export function DocentePanel() {
         docente.aula.id,
         docente.id,
         electorId,
+        puestoIdDeseado,
       );
 
-      // Recargar puestos en vivo
+      // Recargar puestos en vivo y salón
       await cargarPuestosBackend(docente.aula.id);
+      await cargarSalonDocente();
 
       // Activar aviso y cuenta regresiva
       setReservaActiva({
@@ -371,7 +420,55 @@ export function DocentePanel() {
         </div>
       )}
 
-      {/* Banner de Reserva Activa en Curso */}
+      {/* Pestañas de Navegación del Docente */}
+      <div className="flex border-b border-slate-200 bg-white rounded-xl p-1 shadow-xs space-x-1">
+        <button
+          onClick={() => setTabActiva('acreditacion')}
+          className={`flex-1 py-2 px-2 sm:px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+            tabActiva === 'acreditacion'
+              ? 'bg-emerald-700 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <Barcode className="w-3.5 h-3.5" />
+          <span>Acreditar & Puestos</span>
+        </button>
+
+        <button
+          onClick={() => {
+            setTabActiva('salon');
+            cargarSalonDocente();
+          }}
+          className={`flex-1 py-2 px-2 sm:px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+            tabActiva === 'salon'
+              ? 'bg-emerald-700 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <Users className="w-3.5 h-3.5" />
+          <span>Mi Salón ({salonData?.total_asignados ?? '...'})</span>
+        </button>
+
+        <button
+          onClick={() => {
+            setTabActiva('partidos');
+            cargarPartidosDocente();
+          }}
+          className={`flex-1 py-2 px-2 sm:px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+            tabActiva === 'partidos'
+              ? 'bg-emerald-700 text-white shadow-xs'
+              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+          }`}
+        >
+          <Flag className="w-3.5 h-3.5" />
+          <span>Listas ({partidosList.length})</span>
+        </button>
+      </div>
+
+      {/* CONTENIDO PESTAÑA 1: ACREDITACIÓN Y PUESTOS */}
+      {tabActiva === 'acreditacion' && (
+        <div className="space-y-4">
+          {/* Banner de Reserva Activa en Curso */}
       {reservaActiva && (
         <Card className="border-2 border-amber-500 bg-amber-50 shadow-md animate-in fade-in slide-in-from-top-2">
           <CardContent className="p-4 space-y-3">
@@ -489,27 +586,49 @@ export function DocentePanel() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          <Button
-            size="touch"
-            onClick={() => {
-              setScanError(null);
-              setScannerOpen(true);
-            }}
-            disabled={puestosLibres === 0}
-            className={`w-full font-bold text-base shadow-sm ${
-              puestosLibres > 0
-                ? 'bg-emerald-700 hover:bg-emerald-800 text-white'
-                : 'bg-slate-300 text-slate-500 cursor-not-allowed'
-            }`}
-          >
-            <Barcode className="w-5 h-5 mr-2" />
-            {puestosLibres > 0 ? 'Escanear DNI de Estudiante' : 'Sin Puestos Libres (Espere...)'}
-          </Button>
+          {puestos.length === 0 ? (
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-center space-y-2">
+              <p className="text-xs text-amber-800 font-medium">
+                ⚠️ Aún no hay máquinas de votación vinculadas a esta aula. Vincula al menos una máquina escaneando su código QR para comenzar las votaciones.
+              </p>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setPairError(null);
+                  setPairFeedback(null);
+                  setShowPairModal(true);
+                }}
+                className="bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs"
+              >
+                <QrCode className="w-3.5 h-3.5 mr-1" />
+                Vincular Máquina con QR
+              </Button>
+            </div>
+          ) : (
+            <>
+              <Button
+                size="touch"
+                onClick={() => {
+                  setScanError(null);
+                  setScannerOpen(true);
+                }}
+                disabled={puestosLibres === 0}
+                className={`w-full font-bold text-base shadow-sm ${
+                  puestosLibres > 0
+                    ? 'bg-emerald-700 hover:bg-emerald-800 text-white'
+                    : 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                }`}
+              >
+                <Barcode className="w-5 h-5 mr-2" />
+                {puestosLibres > 0 ? 'Escanear DNI de Estudiante' : 'Sin Puestos Libres (Espere...)'}
+              </Button>
 
-          {puestosLibres === 0 && (
-            <p className="text-xs text-amber-700 text-center font-medium">
-              Todos los puestos de votación están ocupados. Espere a que un alumno termine de votar.
-            </p>
+              {puestosLibres === 0 && (
+                <p className="text-xs text-amber-700 text-center font-medium">
+                  Todos los puestos de votación están ocupados. Espere a que un alumno termine de votar.
+                </p>
+              )}
+            </>
           )}
 
           <p className="text-[11px] text-slate-500 text-center">
@@ -517,6 +636,202 @@ export function DocentePanel() {
           </p>
         </CardContent>
       </Card>
+      </div>
+      )}
+
+      {/* CONTENIDO PESTAÑA 2: MI SALÓN (PADRÓN DEL AULA) */}
+      {tabActiva === 'salon' && (
+        <div className="space-y-4">
+          <Card className="border-emerald-200 bg-gradient-to-b from-emerald-50/60 to-white">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base font-black text-slate-900">
+                    Estudiantes de {docente.aula.nombre}
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Padrón oficial de electores asignados a esta mesa
+                  </CardDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={cargarSalonDocente}
+                  disabled={loadingSalon}
+                  className="text-xs h-8"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 mr-1 ${loadingSalon ? 'animate-spin' : ''}`} />
+                  Actualizar
+                </Button>
+              </div>
+            </CardHeader>
+
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="p-2.5 rounded-xl bg-white border border-slate-200 shadow-xs">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase block">Total Padrón</span>
+                  <span className="text-lg font-black text-slate-900">{salonData?.total_asignados ?? 0}</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 shadow-xs">
+                  <span className="text-[10px] font-bold text-emerald-800 uppercase block">Ya Votaron</span>
+                  <span className="text-lg font-black text-emerald-700">{salonData?.total_votaron ?? 0}</span>
+                </div>
+                <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 shadow-xs">
+                  <span className="text-[10px] font-bold text-amber-800 uppercase block">Pendientes</span>
+                  <span className="text-lg font-black text-amber-700">{salonData?.total_pendientes ?? 0}</span>
+                </div>
+              </div>
+
+              {/* Barra de Progreso de Participación */}
+              <div>
+                <div className="flex justify-between text-xs font-bold text-slate-700 mb-1">
+                  <span>Avance de la Mesa</span>
+                  <span>{salonData?.porcentaje_avance ?? 0}%</span>
+                </div>
+                <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden">
+                  <div
+                    className="bg-emerald-600 h-full transition-all duration-500 rounded-full"
+                    style={{ width: `${salonData?.porcentaje_avance ?? 0}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Buscador de Estudiantes */}
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Buscar estudiante por DNI o apellido..."
+                  value={busquedaSalon}
+                  onChange={(e) => setBusquedaSalon(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
+                />
+              </div>
+
+              {/* Lista de Alumnos */}
+              <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                {salonData?.electores
+                  ?.filter((e) => {
+                    if (!busquedaSalon.trim()) return true;
+                    const q = busquedaSalon.toLowerCase();
+                    return (
+                      e.dni.includes(q) ||
+                      e.nombres.toLowerCase().includes(q) ||
+                      e.apellidos.toLowerCase().includes(q)
+                    );
+                  })
+                  .map((elector) => (
+                    <div
+                      key={elector.id}
+                      className="p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 flex items-center justify-between text-xs"
+                    >
+                      <div>
+                        <div className="font-bold text-slate-900">
+                          {elector.apellidos}, {elector.nombres}
+                        </div>
+                        <div className="text-[11px] text-slate-500 font-mono">
+                          DNI: {elector.dni} • Grado: {elector.grado_seccion}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        {elector.estado === 'VOTO' ? (
+                          <Badge className="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-black">
+                            ✓ VOTÓ
+                          </Badge>
+                        ) : elector.estado === 'HABILITADO' ? (
+                          <Badge className="bg-blue-100 text-blue-800 border border-blue-300 text-[10px] font-black">
+                            EN CABINA
+                          </Badge>
+                        ) : (
+                          <>
+                            <Badge className="bg-amber-100 text-amber-800 border border-amber-300 text-[10px] font-bold">
+                              PENDIENTE
+                            </Badge>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleDniDetected(elector.dni, 'MANUAL')}
+                              className="h-6 px-2 text-[10px] font-bold border-emerald-600 text-emerald-700 hover:bg-emerald-50 shrink-0"
+                            >
+                              Habilitar
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+
+                {salonData?.electores && salonData.electores.length === 0 && (
+                  <div className="text-center py-6 text-xs text-slate-500">
+                    No hay electores asignados a esta aula aún.
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* CONTENIDO PESTAÑA 3: LISTAS ELECTORALES POSTULANTES */}
+      {tabActiva === 'partidos' && (
+        <div className="space-y-4">
+          <Card className="border-indigo-200 bg-gradient-to-b from-indigo-50/40 to-white">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base font-black text-slate-900">
+                    Listas Electorales Oficiales
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    Partidos inscritos para la elección estudiantil
+                  </CardDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={cargarPartidosDocente}
+                  disabled={loadingPartidos}
+                  className="text-xs h-8"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 mr-1 ${loadingPartidos ? 'animate-spin' : ''}`} />
+                  Actualizar
+                </Button>
+              </div>
+            </CardHeader>
+
+            <CardContent className="space-y-3">
+              {partidosList.length === 0 ? (
+                <div className="text-center py-6 text-xs text-slate-500">
+                  No hay listas registradas en el proceso electoral.
+                </div>
+              ) : (
+                partidosList.map((partido) => (
+                  <div
+                    key={partido.id}
+                    className="p-3.5 rounded-xl border border-slate-200 bg-white hover:border-indigo-300 flex items-start space-x-3.5 shadow-xs"
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-indigo-700 text-white flex items-center justify-center font-black text-lg shrink-0">
+                      #{partido.numero_lista}
+                    </div>
+                    <div className="flex-1">
+                      <div className="font-black text-sm text-slate-900">{partido.nombre}</div>
+                      {partido.lema && (
+                        <p className="text-xs text-slate-600 mt-0.5 italic">
+                          "{partido.lema}"
+                        </p>
+                      )}
+                      <div className="mt-2 text-[10px] font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded inline-block">
+                        Lista Oficial #{partido.numero_lista}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Modal 1: Escáner / Teclado DNI */}
       <DniScannerModal
@@ -531,6 +846,7 @@ export function DocentePanel() {
       <ElectorFichaModal
         isOpen={fichaOpen}
         elector={electorConsultado}
+        puestosDisponibles={puestos}
         onClose={() => {
           setFichaOpen(false);
           setElectorConsultado(null);

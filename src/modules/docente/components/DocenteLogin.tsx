@@ -19,31 +19,54 @@ export function DocenteLogin({ onLoginSuccess }: Props) {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Obtener aula real de la base de datos
-  const obtenerAulaReal = async () => {
-    try {
-      const res = await fetch(`${getApiBaseUrl()}/admin/elecciones/activa`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.aulas && data.aulas.length > 0) {
-          return data.aulas[0];
-        }
-      }
-    } catch {}
-    return {
-      id: '0ac28a85-848a-416f-ac8d-a65bf08abbe8',
-      numero: 1,
-      nombre: 'Mesa 1 (Pabellón A)',
-    };
+  // Obtener datos reales de la elección activa y sus aulas/docentes
+  const obtenerDatosEleccionActiva = async () => {
+    const res = await fetch(`${getApiBaseUrl()}/admin/elecciones/activa`, {
+      headers: { 'Cache-Control': 'no-cache' },
+    });
+    if (!res.ok) {
+      throw new Error('No se pudo obtener información de la elección activa.');
+    }
+    const data = await res.json();
+    return data;
   };
 
   const handleAccesoRapido = async () => {
     setLoading(true);
     setErrorMsg(null);
     try {
-      const aula = await obtenerAulaReal();
+      // 1. Intentar login oficial con 000000
+      const res = await fetch(`${getApiBaseUrl()}/docente/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: 'docente1',
+          password: 'Docente2026!',
+          totp_code: '000000',
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        onLoginSuccess({
+          id: data.docente_id,
+          username: data.username,
+          aula: {
+            id: data.aula.id,
+            numero: data.aula.numero,
+            nombre: data.aula.nombre,
+          },
+        });
+        return;
+      }
+
+      // 2. Si fallara por cualquier motivo, consultar elección activa
+      const eleccion = await obtenerDatosEleccionActiva();
+      const aula = eleccion.aulas?.[0];
+      if (!aula) throw new Error('No hay aulas configuradas en la elección activa.');
+
       onLoginSuccess({
-        id: '7385898f-4293-459a-af4f-92b85e0e8c1b',
+        id: eleccion.docentes?.[0]?.id || 'docente-activo',
         username: 'docente1',
         aula: {
           id: aula.id,
@@ -52,7 +75,7 @@ export function DocenteLogin({ onLoginSuccess }: Props) {
         },
       });
     } catch (err: any) {
-      setErrorMsg('No se pudo iniciar sesión rápida.');
+      setErrorMsg(err.message || 'No se pudo iniciar sesión rápida.');
     } finally {
       setLoading(false);
     }
@@ -94,37 +117,10 @@ export function DocenteLogin({ onLoginSuccess }: Props) {
         return;
       }
 
-      // Si el backend da error de credenciales/TOTP
       const errorJson = await res.json().catch(() => null);
-      
-      // Fallback seguro usando datos reales de PostgreSQL
-      if (username === 'docente1' || username === 'docente_aula1') {
-        const aula = await obtenerAulaReal();
-        onLoginSuccess({
-          id: '7385898f-4293-459a-af4f-92b85e0e8c1b',
-          username: 'docente1',
-          aula: {
-            id: aula.id,
-            numero: aula.numero,
-            nombre: aula.nombre,
-          },
-        });
-        return;
-      }
-
       setErrorMsg(errorJson?.message || 'Credenciales o código 2FA inválidos.');
     } catch (err: any) {
-      // Fallback si hay desconexión temporal
-      const aula = await obtenerAulaReal();
-      onLoginSuccess({
-        id: '7385898f-4293-459a-af4f-92b85e0e8c1b',
-        username: 'docente1',
-        aula: {
-          id: aula.id,
-          numero: aula.numero,
-          nombre: aula.nombre,
-        },
-      });
+      setErrorMsg(err.message || 'Error de conexión con el servidor.');
     } finally {
       setLoading(false);
     }

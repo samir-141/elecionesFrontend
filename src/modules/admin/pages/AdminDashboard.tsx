@@ -8,7 +8,7 @@ import { AulasManager } from '../components/AulasManager';
 import { PartidosManager } from '../components/PartidosManager';
 import { PadronImportador } from '../components/PadronImportador';
 import { EscrutinioPanel } from '../components/EscrutinioPanel';
-import { Shield, Sliders, Activity, RefreshCw, School, Flag, Users, Award } from 'lucide-react';
+import { Shield, Sliders, Activity, RefreshCw, School, Flag, Award, ChevronDown, FileSpreadsheet } from 'lucide-react';
 
 interface Props {
   onVerPantallaPuerta?: (aulaId: string) => void;
@@ -26,33 +26,67 @@ const PARTIDOS_DEFAULT: Partido[] = [
 
 export function AdminDashboard({ onVerPantallaPuerta }: Props) {
   const [eleccion, setEleccion] = useState<Eleccion>(ELECCION_INICIAL_DEFAULT);
+  const [todasElecciones, setTodasElecciones] = useState<any[]>([]);
   const [aulas, setAulas] = useState<Aula[]>(AULAS_DEFAULT);
   const [partidos, setPartidos] = useState<Partido[]>(PARTIDOS_DEFAULT);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<'ciclo' | 'reglas' | 'aulas' | 'partidos' | 'padron' | 'escrutinio' | 'auditoria'>('ciclo');
   const [loading, setLoading] = useState(true);
 
-  const cargarDatos = async () => {
+  const cargarListaElecciones = async () => {
+    try {
+      const lista = await eleccionApiService.listarElecciones();
+      setTodasElecciones(lista || []);
+    } catch {
+      // Ignorar fallback
+    }
+  };
+
+  const cargarDatos = async (eleccionId?: string) => {
     try {
       setLoading(true);
-      const data = await eleccionApiService.obtenerEleccion();
+      const data = await eleccionApiService.obtenerEleccion(eleccionId || eleccion.id || 'activa');
       setEleccion(data);
       const logs = await eleccionApiService.obtenerAuditoria(data.id);
       setAuditLogs(logs);
 
-      const savedAulas = localStorage.getItem('aulas_eleccion');
-      if (savedAulas) setAulas(JSON.parse(savedAulas));
+      await cargarListaElecciones();
 
-      const savedPartidos = localStorage.getItem('partidos_eleccion');
-      if (savedPartidos) setPartidos(JSON.parse(savedPartidos));
+      // Cargar Aulas enriquecidas desde el Backend
+      try {
+        const resAulas = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000/api'}/admin/elecciones/${data.id}/aulas`);
+        if (resAulas.ok) {
+          const listaAulas = await resAulas.json();
+          setAulas(listaAulas);
+        }
+      } catch {
+        const savedAulas = localStorage.getItem('aulas_eleccion');
+        if (savedAulas) setAulas(JSON.parse(savedAulas));
+      }
+
+      // Cargar Partidos desde el Backend
+      try {
+        const resPartidos = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:4000/api'}/admin/elecciones/${data.id}/partidos`);
+        if (resPartidos.ok) {
+          const listaPartidos = await resPartidos.json();
+          setPartidos(listaPartidos);
+        }
+      } catch {
+        const savedPartidos = localStorage.getItem('partidos_eleccion');
+        if (savedPartidos) setPartidos(JSON.parse(savedPartidos));
+      }
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    cargarDatos();
+    cargarDatos('activa');
   }, []);
+
+  const handleSeleccionarEleccion = async (id: string) => {
+    await cargarDatos(id);
+  };
 
   const handleSaveReglas = async (nuevasReglas: Partial<ReglasEleccion>) => {
     const actualizada = await eleccionApiService.actualizarReglas(eleccion.id, nuevasReglas);
@@ -66,6 +100,7 @@ export function AdminDashboard({ onVerPantallaPuerta }: Props) {
     setEleccion(abierta);
     const logs = await eleccionApiService.obtenerAuditoria(eleccion.id);
     setAuditLogs(logs);
+    await cargarListaElecciones();
   };
 
   const handleCerrar = async () => {
@@ -73,30 +108,40 @@ export function AdminDashboard({ onVerPantallaPuerta }: Props) {
     setEleccion(cerrada);
     const logs = await eleccionApiService.obtenerAuditoria(eleccion.id);
     setAuditLogs(logs);
+    await cargarListaElecciones();
+  };
+
+  const handleReaperturar = async () => {
+    const reaperturada = await eleccionApiService.reaperturarEleccion(eleccion.id);
+    setEleccion(reaperturada);
+    const logs = await eleccionApiService.obtenerAuditoria(eleccion.id);
+    setAuditLogs(logs);
+    await cargarListaElecciones();
+  };
+
+  const handleCrearNueva = async (params: {
+    nombre: string;
+    descripcion?: string;
+    clonarConfiguracion?: boolean;
+    clonarPadron?: boolean;
+    eleccionOrigenId?: string;
+  }) => {
+    const nueva = await eleccionApiService.crearNuevaEleccion(params);
+    setEleccion(nueva);
+    const logs = await eleccionApiService.obtenerAuditoria(nueva.id);
+    setAuditLogs(logs);
+    await cargarListaElecciones();
+    setActiveTab('ciclo');
   };
 
   const handleCrearAula = async (aulaData: { numero: number; nombre: string; capacidad: number }) => {
-    const nuevaAula: Aula = {
-      id: `aula-${Date.now()}`,
-      eleccion_id: eleccion.id,
-      ...aulaData,
-    };
-    const updated = [...aulas, nuevaAula];
-    setAulas(updated);
-    localStorage.setItem('aulas_eleccion', JSON.stringify(updated));
+    await eleccionApiService.crearAula(eleccion.id, aulaData);
+    await cargarDatos(eleccion.id);
   };
 
   const handleCrearPartido = async (partidoData: { numero_lista: number; nombre: string; lema?: string; logo_url?: string }) => {
-    const nuevoPartido: Partido = {
-      id: `partido-${Date.now()}`,
-      eleccion_id: eleccion.id,
-      lema: partidoData.lema || null,
-      logo_url: partidoData.logo_url || null,
-      ...partidoData,
-    };
-    const updated = [...partidos, nuevoPartido];
-    setPartidos(updated);
-    localStorage.setItem('partidos_eleccion', JSON.stringify(updated));
+    await eleccionApiService.crearPartido(eleccion.id, partidoData);
+    await cargarDatos(eleccion.id);
   };
 
   if (loading) {
@@ -116,17 +161,53 @@ export function AdminDashboard({ onVerPantallaPuerta }: Props) {
             <Shield className="w-4 h-4" />
             <span>Panel de Control Electoral</span>
           </div>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tight">{eleccion.nombre}</h2>
-          <p className="text-sm text-slate-500 mt-1">{eleccion.descripcion}</p>
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="text-2xl font-black text-slate-900 tracking-tight">{eleccion.nombre}</h2>
+            <span
+              className={`text-xs font-extrabold uppercase px-2.5 py-1 rounded-full ${
+                eleccion.estado === 'ABIERTA'
+                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                  : eleccion.estado === 'BORRADOR'
+                  ? 'bg-slate-100 text-slate-700 border border-slate-300'
+                  : eleccion.estado === 'CERRADA'
+                  ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                  : 'bg-indigo-100 text-indigo-800 border border-indigo-300'
+              }`}
+            >
+              {eleccion.estado}
+            </span>
+          </div>
+          <p className="text-sm text-slate-500 mt-1">{eleccion.descripcion || 'Proceso electoral institucional'}</p>
         </div>
 
-        <button
-          onClick={cargarDatos}
-          className="inline-flex items-center text-xs font-medium text-slate-600 hover:text-slate-900 border border-slate-200 bg-slate-50 hover:bg-slate-100 rounded-lg px-3 py-2 transition-colors self-start md:self-center"
-        >
-          <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
-          Actualizar Estado
-        </button>
+        <div className="flex flex-wrap items-center gap-2.5 self-start md:self-center">
+          {/* Selector de Elecciones si existen varias */}
+          {todasElecciones.length > 1 && (
+            <div className="relative">
+              <select
+                aria-label="Seleccionar proceso electoral"
+                value={eleccion.id}
+                onChange={(e) => handleSeleccionarEleccion(e.target.value)}
+                className="appearance-none bg-slate-50 hover:bg-slate-100 border border-slate-300 text-slate-800 text-xs font-bold rounded-lg pl-3 pr-8 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-hidden cursor-pointer"
+              >
+                {todasElecciones.map((el) => (
+                  <option key={el.id} value={el.id}>
+                    {el.nombre} ({el.estado})
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-500 absolute right-2.5 top-3 pointer-events-none" />
+            </div>
+          )}
+
+          <button
+            onClick={() => cargarDatos()}
+            className="inline-flex items-center text-xs font-medium text-slate-600 hover:text-slate-900 border border-slate-200 bg-slate-50 hover:bg-slate-100 rounded-lg px-3 py-2 transition-colors"
+          >
+            <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+            Actualizar Estado
+          </button>
+        </div>
       </div>
 
       {/* Navegación por Pestañas */}
@@ -187,8 +268,8 @@ export function AdminDashboard({ onVerPantallaPuerta }: Props) {
               : 'border-transparent text-slate-500 hover:text-slate-900'
           }`}
         >
-          <Users className="w-4 h-4" />
-          <span>Padrón CSV</span>
+          <FileSpreadsheet className="w-4 h-4" />
+          <span>Padrón (Excel / CSV)</span>
         </button>
 
         <button
@@ -219,7 +300,14 @@ export function AdminDashboard({ onVerPantallaPuerta }: Props) {
       {/* Contenido de la Pestaña Activa */}
       <div>
         {activeTab === 'ciclo' && (
-          <CicloVidaPanel eleccion={eleccion} onAbrir={handleAbrir} onCerrar={handleCerrar} />
+          <CicloVidaPanel
+            eleccion={eleccion}
+            onAbrir={handleAbrir}
+            onCerrar={handleCerrar}
+            onReaperturar={handleReaperturar}
+            onCrearNueva={handleCrearNueva}
+            onIrAEscrutinio={() => setActiveTab('escrutinio')}
+          />
         )}
 
         {activeTab === 'reglas' && (
@@ -229,9 +317,11 @@ export function AdminDashboard({ onVerPantallaPuerta }: Props) {
         {activeTab === 'aulas' && (
           <AulasManager
             aulas={aulas}
+            eleccionId={eleccion.id}
             eleccionEstado={eleccion.estado}
             onCrearAula={handleCrearAula}
             onAbrirPuerta={(aulaId) => onVerPantallaPuerta?.(aulaId)}
+            onActualizar={cargarDatos}
           />
         )}
 
@@ -240,6 +330,7 @@ export function AdminDashboard({ onVerPantallaPuerta }: Props) {
             partidos={partidos}
             eleccionEstado={eleccion.estado}
             onCrearPartido={handleCrearPartido}
+            onActualizar={cargarDatos}
           />
         )}
 
@@ -247,14 +338,18 @@ export function AdminDashboard({ onVerPantallaPuerta }: Props) {
           <PadronImportador
             eleccionId={eleccion.id}
             eleccionEstado={eleccion.estado}
-            onImportarExitoso={cargarDatos}
+            aulas={aulas}
+            onImportarExitoso={() => cargarDatos()}
           />
         )}
 
         {activeTab === 'escrutinio' && (
           <EscrutinioPanel
             eleccion={eleccion}
-            onEleccionActualizada={(nueva) => setEleccion(nueva)}
+            onEleccionActualizada={(nueva) => {
+              setEleccion(nueva);
+              cargarListaElecciones();
+            }}
           />
         )}
 

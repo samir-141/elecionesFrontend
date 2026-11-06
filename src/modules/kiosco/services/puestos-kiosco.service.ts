@@ -1,10 +1,11 @@
 import { getApiBaseUrl } from '../../../config/api';
 
 export interface SolicitudEmparejamientoResponse {
-  puesto_id: string;
-  numero_puesto: number;
-  aula: string;
+  puesto_id?: string;
+  numero_puesto?: number;
+  aula?: string;
   qr_token: string;
+  codigo_corto?: string;
   qr_data_url: string;
   expires_at: string;
 }
@@ -41,18 +42,15 @@ export const puestosKioscoService = {
   },
 
   async solicitarEmparejamiento(
-    aulaId: string,
-    numeroPuesto: number,
+    aulaId?: string,
+    numeroPuesto?: number,
   ): Promise<SolicitudEmparejamientoResponse> {
     const res = await fetch(`${getApiBaseUrl()}/puesto/solicitar-emparejamiento`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        aula_id: aulaId,
-        numero_puesto: numeroPuesto,
-      }),
+      body: JSON.stringify(aulaId ? { aula_id: aulaId, numero_puesto: numeroPuesto } : {}),
     });
 
     if (!res.ok) {

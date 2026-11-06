@@ -7,6 +7,8 @@ import {
   Shield,
   LogOut,
   Lock,
+  Users2,
+  ChevronDown,
 } from 'lucide-react';
 import { Button } from '../ui/button';
 
@@ -39,8 +41,8 @@ export function Navbar() {
             </div>
           </NavLink>
 
-          {/* Enlaces de Navegación por Módulo */}
-          <nav className="hidden md:flex items-center space-x-1">
+          {/* Enlaces de Navegación Simplificados */}
+          <nav className="hidden md:flex items-center space-x-1.5">
             <NavLink
               to="/kiosco"
               className={({ isActive }) =>
@@ -52,21 +54,7 @@ export function Navbar() {
               }
             >
               <Vote className="w-3.5 h-3.5" />
-              <span>Kiosco Votación</span>
-            </NavLink>
-
-            <NavLink
-              to="/docente"
-              className={({ isActive }) =>
-                `flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
-                  isActive
-                    ? 'bg-emerald-600 text-white shadow-sm'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-800'
-                }`
-              }
-            >
-              <School className="w-3.5 h-3.5" />
-              <span>Docente Aula</span>
+              <span>Mesa de Votación</span>
             </NavLink>
 
             <NavLink
@@ -80,26 +68,36 @@ export function Navbar() {
               }
             >
               <Monitor className="w-3.5 h-3.5" />
-              <span>Pantalla Puerta</span>
+              <span>Padrón Público</span>
             </NavLink>
 
-            <NavLink
-              to="/admin"
-              className={({ isActive }) =>
-                `flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all ${
-                  isActive
-                    ? 'bg-slate-700 text-white ring-1 ring-slate-500 shadow-sm'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-800'
-                }`
-              }
-            >
-              {isAdmin ? (
-                <Shield className="w-3.5 h-3.5 text-blue-400" />
-              ) : (
-                <Lock className="w-3.5 h-3.5 text-amber-400" />
-              )}
-              <span>Administración</span>
-            </NavLink>
+            {/* Menú Encargados con Dropdown */}
+            <div className="relative group">
+              <button
+                className="flex items-center space-x-1.5 px-3 py-2 rounded-lg text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800 transition-all cursor-pointer"
+              >
+                <Users2 className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Encargados</span>
+                <ChevronDown className="w-3 h-3 text-slate-400" />
+              </button>
+
+              <div className="absolute right-0 top-full mt-1 w-48 bg-slate-900 border border-slate-800 rounded-xl shadow-xl py-1 hidden group-hover:block animate-in fade-in z-50">
+                <NavLink
+                  to="/docente"
+                  className="flex items-center space-x-2 px-3 py-2 text-xs text-slate-300 hover:text-white hover:bg-slate-800"
+                >
+                  <School className="w-4 h-4 text-emerald-400" />
+                  <span>Docente de Aula</span>
+                </NavLink>
+                <NavLink
+                  to="/admin"
+                  className="flex items-center space-x-2 px-3 py-2 text-xs text-slate-300 hover:text-white hover:bg-slate-800 border-t border-slate-800/60"
+                >
+                  <Shield className="w-4 h-4 text-blue-400" />
+                  <span>Administrador</span>
+                </NavLink>
+              </div>
+            </div>
           </nav>
 
           {/* Estado de Sesión y Acciones */}

@@ -56,6 +56,7 @@ export const habilitacionApiService = {
     docenteAulaId: string,
     docenteId: string,
     electorId: string,
+    puestoId?: string,
   ): Promise<HabilitacionConfirmada> {
     const res = await fetch(`${getApiBaseUrl()}/docente/habilitacion/confirmar`, {
       method: 'POST',
@@ -64,7 +65,10 @@ export const habilitacionApiService = {
         'x-docente-aula-id': docenteAulaId,
         'x-actor-id': docenteId,
       },
-      body: JSON.stringify({ elector_id: electorId }),
+      body: JSON.stringify({
+        elector_id: electorId,
+        ...(puestoId ? { puesto_id: puestoId } : {}),
+      }),
     });
 
     if (!res.ok) {
@@ -135,6 +139,49 @@ export const habilitacionApiService = {
       throw new Error(error.message || 'Error al emparejar el puesto con el código QR');
     }
 
+    return await res.json();
+  },
+
+  async obtenerSalon(docenteAulaId: string): Promise<{
+    aula: { id: string; numero: number; nombre: string };
+    total_asignados: number;
+    total_votaron: number;
+    total_pendientes: number;
+    porcentaje_avance: number;
+    electores: Array<{
+      id: string;
+      dni: string;
+      nombres: string;
+      apellidos: string;
+      grado_seccion: string;
+      estado: 'PENDIENTE' | 'HABILITADO' | 'VOTO';
+    }>;
+  }> {
+    const res = await fetch(`${getApiBaseUrl()}/docente/aula/${docenteAulaId}/salon`, {
+      headers: { 'Cache-Control': 'no-cache' },
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ message: 'Error al consultar salón' }));
+      throw new Error(error.message || 'Error al consultar el salón');
+    }
+    return await res.json();
+  },
+
+  async obtenerPartidos(): Promise<
+    Array<{
+      id: string;
+      numero_lista: number;
+      nombre: string;
+      lema: string | null;
+      logo_url: string | null;
+    }>
+  > {
+    const res = await fetch(`${getApiBaseUrl()}/docente/partidos`, {
+      headers: { 'Cache-Control': 'no-cache' },
+    });
+    if (!res.ok) {
+      return [];
+    }
     return await res.json();
   },
 };

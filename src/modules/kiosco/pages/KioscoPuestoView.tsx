@@ -7,7 +7,8 @@ import {
   RefreshCw,
   Copy,
   Clock,
-  Settings,
+  Maximize,
+  Minimize,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../../../components/ui/card';
 import { Button } from '../../../components/ui/button';
@@ -38,6 +39,7 @@ export function KioscoPuestoView() {
     Array<{ id: string; numero: number; nombre: string }>
   >([]);
   const [modalConfigOpen, setModalConfigOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Estados de Emparejamiento Real
   const [emparejado, setEmparejado] = useState(false);
@@ -55,6 +57,24 @@ export function KioscoPuestoView() {
 
   const sincronizandoRef = useRef(false);
 
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+      setIsFullscreen(true);
+    } else {
+      document.exitFullscreen().catch(() => {});
+      setIsFullscreen(false);
+    }
+  };
+
+  useEffect(() => {
+    const handleFsChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, []);
+
   // 1. Cargar datos de la elección activa y Aulas
   useEffect(() => {
     puestosKioscoService
@@ -62,62 +82,43 @@ export function KioscoPuestoView() {
       .then((eleccion) => {
         if (eleccion?.aulas && eleccion.aulas.length > 0) {
           setAulasDisponibles(eleccion.aulas);
-          if (!config) {
-            const defaultConfig: KioscoConfig = {
-              aulaId: eleccion.aulas[0].id,
-              aulaNombre: eleccion.aulas[0].nombre,
-              puestoNumero: 1,
-            };
-            setConfig(defaultConfig);
-            localStorage.setItem('kiosco_config', JSON.stringify(defaultConfig));
-          }
         }
       })
-      .catch(() => {
-        // Fallback predeterminado institucional
-        if (!config) {
-          const fallbackConfig: KioscoConfig = {
-            aulaId: '0ac28a85-848a-416f-ac8d-a65bf08abbe8',
-            aulaNombre: 'Mesa 1 (Pabellón A)',
-            puestoNumero: 1,
-          };
-          setConfig(fallbackConfig);
-          localStorage.setItem('kiosco_config', JSON.stringify(fallbackConfig));
-        }
-      });
+      .catch(() => {});
   }, []);
 
   // 2. Verificar si ya existe una sesión guardada y activa
   useEffect(() => {
-    if (!config) return;
-
-    try {
-      const sesionGuardada = localStorage.getItem(`kiosco_sesion_${config.aulaId}_${config.puestoNumero}`);
-      if (sesionGuardada) {
-        const parsed = JSON.parse(sesionGuardada);
-        if (parsed.puesto_id && parsed.token_sesion) {
-          // Validar contra el backend
-          puestosKioscoService
-            .sincronizar(parsed.puesto_id, parsed.token_sesion)
-            .then((res) => {
-              if (res.ok) {
-                setPuestoId(parsed.puesto_id);
-                setTokenSesion(parsed.token_sesion);
-                setEmparejado(true);
-                setLastHeartbeat(new Date());
-              } else {
-                localStorage.removeItem(`kiosco_sesion_${config.aulaId}_${config.puestoNumero}`);
+    if (config) {
+      try {
+        const sesionGuardada = localStorage.getItem(`kiosco_sesion_${config.aulaId}_${config.puestoNumero}`);
+        if (sesionGuardada) {
+          const parsed = JSON.parse(sesionGuardada);
+          if (parsed.puesto_id && parsed.token_sesion) {
+            puestosKioscoService
+              .sincronizar(parsed.puesto_id, parsed.token_sesion)
+              .then((res) => {
+                if (res.ok) {
+                  setPuestoId(parsed.puesto_id);
+                  setTokenSesion(parsed.token_sesion);
+                  setEmparejado(true);
+                  setLastHeartbeat(new Date());
+                } else {
+                  localStorage.removeItem(`kiosco_sesion_${config.aulaId}_${config.puestoNumero}`);
+                  localStorage.removeItem('kiosco_config');
+                  setConfig(null);
+                  generarQrEmparejamiento();
+                }
+              })
+              .catch(() => {
                 generarQrEmparejamiento();
-              }
-            })
-            .catch(() => {
-              generarQrEmparejamiento();
-            });
-          return;
+              });
+            return;
+          }
         }
+      } catch {
+        // Ignorar
       }
-    } catch {
-      // Ignorar error de parsing
     }
 
     if (!emparejado) {
@@ -125,21 +126,19 @@ export function KioscoPuestoView() {
     }
   }, [config]);
 
-  // 3. Generar un QR Real mediante backend
+  // 3. Generar un QR Real de Máquina: Sin datos predeterminados, toma lugar al escanearse
   const generarQrEmparejamiento = async () => {
-    if (!config) return;
     setQrCargando(true);
     setQrError(null);
     try {
-      const data = await puestosKioscoService.solicitarEmparejamiento(
-        config.aulaId,
-        config.puestoNumero,
-      );
+      const data = await puestosKioscoService.solicitarEmparejamiento();
       setQrData(data);
-      setPuestoId(data.puesto_id);
-      setSegundosExpiracion(300);
+      if (data.puesto_id) {
+        setPuestoId(data.puesto_id);
+      }
+      setSegundosExpiracion(600);
     } catch (err: any) {
-      setQrError(err.message || 'Error al conectar con el servidor para generar QR.');
+      setQrError(err.message || 'Error al conectar con el servidor electoral.');
     } finally {
       setQrCargando(false);
     }
@@ -189,14 +188,23 @@ export function KioscoPuestoView() {
     const interval = setInterval(async () => {
       try {
         const res = await puestosKioscoService.verificarQr(qrData.qr_token);
-        if (res.status === 'APPROVED' && res.token_sesion && res.puesto_id && config) {
+        if (res.status === 'APPROVED' && res.token_sesion && res.puesto_id) {
           reproducirChimeActivacion();
           setPuestoId(res.puesto_id);
           setTokenSesion(res.token_sesion);
           setEmparejado(true);
           setLastHeartbeat(new Date());
+
+          const nuevaConfig: KioscoConfig = {
+            aulaId: res.aula_id || config?.aulaId || '',
+            aulaNombre: res.aula_nombre || config?.aulaNombre || 'Mesa Electoral',
+            puestoNumero: res.numero_puesto || config?.puestoNumero || 1,
+          };
+          setConfig(nuevaConfig);
+          localStorage.setItem('kiosco_config', JSON.stringify(nuevaConfig));
+
           localStorage.setItem(
-            `kiosco_sesion_${config.aulaId}_${config.puestoNumero}`,
+            `kiosco_sesion_${nuevaConfig.aulaId}_${nuevaConfig.puestoNumero}`,
             JSON.stringify({
               puesto_id: res.puesto_id,
               token_sesion: res.token_sesion,
@@ -256,12 +264,15 @@ export function KioscoPuestoView() {
 
   const handleDesvincular = async () => {
     if (puestoId && tokenSesion) {
-      await puestosKioscoService.desvincular(puestoId, tokenSesion);
+      await puestosKioscoService.desvincular(puestoId, tokenSesion).catch(() => {});
     }
     if (config) {
       localStorage.removeItem(`kiosco_sesion_${config.aulaId}_${config.puestoNumero}`);
+      localStorage.removeItem('kiosco_config');
     }
+    setConfig(null);
     setEmparejado(false);
+    setPuestoId(null);
     setTokenSesion(null);
     setTokenVotoActivo(null);
     generarQrEmparejamiento();
@@ -279,24 +290,41 @@ export function KioscoPuestoView() {
   };
 
   return (
-    <div className="min-h-[85vh] flex flex-col justify-center items-center p-2 sm:p-4">
-      {/* Barra superior de configuración rápida de Terminal */}
-      <div className="w-full max-w-md flex justify-between items-center mb-3 px-2">
-        <div className="text-xs font-semibold text-slate-500 flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />
-          <span>{config?.aulaNombre || 'Mesa Electoral'}</span>
-          <span className="text-slate-300">•</span>
-          <span className="font-bold text-slate-700">Puesto #{config?.puestoNumero || 1}</span>
+    <div className="w-full h-full min-h-screen flex flex-col justify-center items-center p-3 sm:p-6 relative select-none bg-gradient-to-b from-slate-950 via-slate-900 to-indigo-950 text-white overflow-y-auto">
+      {/* Barra superior flotante de la Terminal (Sin navegación a otros módulos) */}
+      <div className="absolute top-3 left-3 right-3 sm:top-4 sm:left-6 sm:right-6 flex justify-between items-center pointer-events-auto z-20">
+        <div className="flex items-center gap-2 bg-slate-900/80 backdrop-blur-md px-3 py-1.5 rounded-full border border-slate-800 text-xs text-slate-300 shadow-sm">
+          <span
+            className={`w-2 h-2 rounded-full inline-block ${
+              emparejado ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400 animate-pulse'
+            }`}
+          />
+          <span className="font-bold text-white tracking-wide">Terminal de Votación</span>
+          {config ? (
+            <>
+              <span className="text-slate-500">•</span>
+              <span className="text-slate-300 font-medium">{config.aulaNombre}</span>
+              <span className="text-slate-500">•</span>
+              <span className="font-extrabold text-blue-400">Puesto #{config.puestoNumero}</span>
+            </>
+          ) : (
+            <>
+              <span className="text-slate-500">•</span>
+              <span className="text-amber-300 font-bold">En espera de asignación de mesa</span>
+            </>
+          )}
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setModalConfigOpen(true)}
-          className="text-xs text-slate-500 hover:text-slate-900 h-7 px-2"
-        >
-          <Settings className="w-3.5 h-3.5 mr-1" />
-          Cambiar Mesa
-        </Button>
+
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={toggleFullscreen}
+            title={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
+            className="flex items-center gap-1 text-xs text-slate-400 hover:text-white bg-slate-900/80 hover:bg-slate-800 border border-slate-800 px-2.5 py-1.5 rounded-lg transition-colors"
+          >
+            {isFullscreen ? <Minimize className="w-3.5 h-3.5" /> : <Maximize className="w-3.5 h-3.5" />}
+            <span className="hidden sm:inline">{isFullscreen ? 'Ventana' : 'Pantalla Completa'}</span>
+          </button>
+        </div>
       </div>
 
       {/* MODO 1: CÉDULA ELECTORAL ACTIVA (EL ESTUDIANTE ESTÁ VOTANDO CON SU TOKEN) */}
@@ -308,20 +336,20 @@ export function KioscoPuestoView() {
           />
         </div>
       ) : !emparejado ? (
-        /* MODO 2: PUESTO DESCONECTADO - VALIDADOR REAL POR CÓDIGO QR EFÍMERO (ADR-005) */
+        /* MODO 2: PUESTO DESCONECTADO - CÓDIGO QR EFÍMERO DINÁMICO (TOMA LUGAR AL ESCANEARSE) */
         <Card className="max-w-md w-full border-2 border-slate-300 shadow-xl text-center animate-in fade-in">
           <CardHeader className="pb-3">
             <div className="w-14 h-14 rounded-2xl bg-indigo-100 text-indigo-900 mx-auto flex items-center justify-center mb-2 shadow-inner">
               <QrCode className="w-7 h-7" />
             </div>
             <div className="text-[11px] uppercase font-black tracking-widest text-indigo-600">
-              Terminal de Votación Institucional
+              Terminal de Votación Estudiantil
             </div>
             <CardTitle className="text-2xl font-black text-slate-900">
-              Puesto #{config?.puestoNumero || 1}
+              Máquina de Votación
             </CardTitle>
             <CardDescription className="text-xs text-slate-600 font-medium">
-              Asignado a: <strong className="text-slate-900">{config?.aulaNombre}</strong>
+              Estado: <strong className="text-amber-600 font-bold">Sin Asignar (Esperando Escaneo)</strong>
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -329,7 +357,7 @@ export function KioscoPuestoView() {
               {qrCargando ? (
                 <div className="w-52 h-52 bg-white rounded-xl border border-slate-200 flex flex-col items-center justify-center space-y-2">
                   <RefreshCw className="w-8 h-8 text-indigo-600 animate-spin" />
-                  <span className="text-xs text-slate-500">Generando QR seguro...</span>
+                  <span className="text-xs text-slate-500">Generando código de máquina...</span>
                 </div>
               ) : qrError ? (
                 <div className="w-52 h-52 bg-red-50 text-red-700 rounded-xl border border-red-200 p-4 flex flex-col items-center justify-center text-xs space-y-2">
@@ -345,7 +373,7 @@ export function KioscoPuestoView() {
                   <div className="w-52 h-52 bg-white p-2 rounded-xl border-2 border-indigo-300 shadow-sm flex items-center justify-center">
                     <img
                       src={qrData.qr_data_url}
-                      alt="Código QR de Validación de Puesto"
+                      alt="Código QR de Validación de Máquina"
                       className="w-full h-full object-contain"
                     />
                   </div>
@@ -360,18 +388,30 @@ export function KioscoPuestoView() {
 
               <div className="space-y-1 text-center">
                 <p className="text-xs font-bold text-slate-800">
-                  Docente de Mesa: Escanee este código QR con su celular o tablet
+                  Escanee este código con el Panel del Docente o Administrador
                 </p>
                 <p className="text-[11px] text-slate-500 leading-tight">
-                  Al autorizarlo desde el panel de docente, el puesto se activará automáticamente sin recargar la página.
+                  Al autorizar esta máquina, tomará su lugar automáticamente en la mesa correspondiente.
                 </p>
               </div>
 
-              {/* Token en texto plano para entrada manual si la cámara del docente no está disponible */}
+              {/* Código corto de identificación de la máquina */}
+              {qrData?.codigo_corto && (
+                <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-2.5 w-full text-center">
+                  <span className="text-[10px] text-indigo-800 uppercase font-black block tracking-wider">
+                    Identificador de Máquina
+                  </span>
+                  <span className="text-2xl font-mono font-black text-indigo-950 tracking-widest">
+                    {qrData.codigo_corto}
+                  </span>
+                </div>
+              )}
+
+              {/* Token en texto plano para entrada manual alternativa */}
               {qrData?.qr_token && (
                 <div className="w-full pt-1 border-t border-slate-200">
                   <div className="text-[10px] text-slate-500 mb-1 font-semibold">
-                    Código de Autorización Manual:
+                    Token QR Completo:
                   </div>
                   <div className="flex items-center space-x-1">
                     <input
@@ -401,11 +441,7 @@ export function KioscoPuestoView() {
             {/* Estado de espera en tiempo real */}
             <div className="flex items-center justify-center space-x-2 text-xs font-semibold text-indigo-900 bg-indigo-50/70 p-2.5 rounded-xl border border-indigo-100">
               <RefreshCw className="w-4 h-4 text-indigo-600 animate-spin" />
-              <span>Esperando que el Docente autorice el puesto...</span>
-            </div>
-
-            <div className="text-[10px] text-slate-400">
-              Invariante ADR-005: El QR es de un solo uso y queda invalidado al emparejarse.
+              <span>Esperando que el Docente o Admin escanee el código...</span>
             </div>
           </CardContent>
         </Card>

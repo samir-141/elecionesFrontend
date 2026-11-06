@@ -1,55 +1,26 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card';
-import { Vote, School, Monitor, ShieldCheck, ArrowRight, Lock, CheckCircle2 } from 'lucide-react';
+import { Button } from '../components/ui/button';
+import {
+  Vote,
+  School,
+  Monitor,
+  ShieldCheck,
+  ArrowRight,
+  Lock,
+  CheckCircle2,
+  Users2,
+  KeyRound,
+  X,
+  Search,
+} from 'lucide-react';
 import { eleccionApiService } from '../modules/admin/services/eleccion.service';
 
 export function HomePage() {
   const navigate = useNavigate();
   const isAdmin = eleccionApiService.isAdminAuthenticated();
-
-  const modulos = [
-    {
-      titulo: 'Kiosco de Votación',
-      subtitulo: 'Para Estudiantes (Electores)',
-      descripcion: 'Terminal táctil tipo kiosco para emisión de voto secreto con cédula barajada y opción en blanco.',
-      icono: Vote,
-      color: 'bg-blue-600',
-      borde: 'border-blue-200 hover:border-blue-500',
-      ruta: '/kiosco',
-      badge: 'Voto Anónimo I1-I19',
-    },
-    {
-      titulo: 'Docente de Aula',
-      subtitulo: 'Control de Identidad y Puestos',
-      descripcion: 'Interfaz mobile-first para escaneo de DNI con cámara, verificación física y asignación atómica.',
-      icono: School,
-      color: 'bg-emerald-600',
-      borde: 'border-emerald-200 hover:border-emerald-500',
-      ruta: '/docente',
-      badge: '2FA TOTP + QR',
-    },
-    {
-      titulo: 'Pantalla de Puerta',
-      subtitulo: 'Proyección Pública para TV/Monitor',
-      descripcion: 'Visualización informativa en la entrada de las aulas. Muestra padrón y ubicación con anonimato I1.',
-      icono: Monitor,
-      color: 'bg-indigo-600',
-      borde: 'border-indigo-200 hover:border-indigo-500',
-      ruta: '/puerta',
-      badge: 'Pública • Cero Datos de Voto',
-    },
-    {
-      titulo: 'Panel de Administración',
-      subtitulo: 'Gestión Integral Electoral',
-      descripcion: 'Control de ciclo de vida, configuración de reglas, padrón CSV, congelamiento SHA-256 y escrutinio.',
-      icono: ShieldCheck,
-      color: 'bg-slate-900',
-      borde: 'border-slate-300 hover:border-slate-700',
-      ruta: isAdmin ? '/admin' : '/admin/login',
-      badge: isAdmin ? 'Sesión Activa' : 'Protegido con Login',
-      requiereLogin: !isAdmin,
-    },
-  ];
+  const [showModalEncargados, setShowModalEncargados] = useState(false);
 
   return (
     <div className="max-w-5xl mx-auto space-y-8 py-6 px-3 sm:px-4">
@@ -65,76 +36,237 @@ export function HomePage() {
         </h1>
 
         <p className="text-xs sm:text-sm text-slate-300 max-w-xl mx-auto">
-          Sistema institucional de voto electrónico presencial con anonimato radical, urna de cuatro columnas,
-          reserva atómica con bloqueo de filas y verificación criptográfica inmutable.
+          Sistema institucional de voto electrónico presencial con anonimato radical, urna digital de cuatro columnas y verificación criptográfica inmutable.
         </p>
 
         <div className="flex flex-wrap items-center justify-center gap-3 pt-2 text-[11px] text-slate-400">
           <span className="flex items-center gap-1">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Anonimato Radical (I1, I2)
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Voto Anónimo e Inmutable (I1, I2)
           </span>
           <span className="flex items-center gap-1">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Transacción Atómica I4
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Transacción Atómica en Urna I4
           </span>
           <span className="flex items-center gap-1">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Huella SHA-256 (ADR-008)
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Huella Criptográfica SHA-256
           </span>
         </div>
       </div>
 
-      {/* Selector de Experiencia / Módulos por Rol */}
+      {/* Selector Principal Simplificado: Solo 2 Opciones */}
       <div>
         <div className="text-center mb-6">
-          <h2 className="text-lg font-black text-slate-900">Selecciona el Módulo de Operación</h2>
-          <p className="text-xs text-slate-500">Cada rol cuenta con una interfaz especializada e independiente</p>
+          <h2 className="text-xl font-black text-slate-900">Selecciona el Modo de Acceso</h2>
+          <p className="text-xs text-slate-500">Acceso exclusivo para emisión de votos o gestión por personal autorizado</p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {modulos.map((m) => {
-            const Icono = m.icono;
-            return (
-              <Card
-                key={m.titulo}
-                className={`border-2 transition-all shadow-xs hover:shadow-md cursor-pointer flex flex-col justify-between ${m.borde}`}
-                onClick={() => navigate(m.ruta)}
-              >
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <div className={`w-12 h-12 rounded-2xl ${m.color} text-white flex items-center justify-center shadow-md`}>
-                      <Icono className="w-6 h-6" />
-                    </div>
-                    <span className="bg-slate-100 text-slate-700 text-[10px] font-bold px-2.5 py-1 rounded-full border border-slate-200">
-                      {m.badge}
-                    </span>
-                  </div>
-                  <div className="pt-3">
-                    <div className="text-[11px] uppercase tracking-wider text-slate-400 font-bold">
-                      {m.subtitulo}
-                    </div>
-                    <CardTitle className="text-lg font-extrabold text-slate-900">
-                      {m.titulo}
-                    </CardTitle>
-                  </div>
-                </CardHeader>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* OPCIÓN 1: MESA DE VOTACIÓN (Antes Kiosco) */}
+          <Card
+            className="border-2 border-blue-200 hover:border-blue-600 transition-all shadow-sm hover:shadow-xl cursor-pointer flex flex-col justify-between group overflow-hidden bg-gradient-to-b from-blue-50/40 via-white to-white"
+            onClick={() => navigate('/kiosco')}
+          >
+            <CardHeader className="pb-3">
+              <div className="flex items-start justify-between">
+                <div className="w-14 h-14 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
+                  <Vote className="w-7 h-7" />
+                </div>
+                <span className="bg-blue-100 text-blue-800 text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-full border border-blue-200">
+                  Para Estudiantes
+                </span>
+              </div>
+              <div className="pt-4">
+                <div className="text-xs uppercase tracking-wider text-blue-700 font-extrabold">
+                  Terminal de Sufragio Estudiantil
+                </div>
+                <CardTitle className="text-2xl font-black text-slate-900 mt-1">
+                  Mesa de Votación
+                </CardTitle>
+              </div>
+            </CardHeader>
 
-                <CardContent className="space-y-4">
-                  <CardDescription className="text-xs text-slate-600 leading-relaxed">
-                    {m.descripcion}
-                  </CardDescription>
+            <CardContent className="space-y-4">
+              <CardDescription className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+                Pantalla táctil aislada a pantalla completa para que los alumnos emitan su voto secreto con cédula barajada y opción en blanco.
+              </CardDescription>
 
-                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-blue-700">
-                    <span className="flex items-center gap-1">
-                      {m.requiereLogin && <Lock className="w-3.5 h-3.5 text-amber-600" />}
-                      Ingresar al Módulo
-                    </span>
-                    <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-black text-blue-700 group-hover:text-blue-800">
+                <span>Ingresar a Mesa de Votación</span>
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-1.5 transition-transform" />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* OPCIÓN 2: ENCARGADOS (NUEVO: DOCENTE O ADMINISTRADOR) */}
+          <Card
+            className="border-2 border-indigo-200 hover:border-indigo-600 transition-all shadow-sm hover:shadow-xl cursor-pointer flex flex-col justify-between group overflow-hidden bg-gradient-to-b from-indigo-50/40 via-white to-white"
+            onClick={() => setShowModalEncargados(true)}
+          >
+            <CardHeader className="pb-3">
+              <div className="flex items-start justify-between">
+                <div className="w-14 h-14 rounded-2xl bg-indigo-700 text-white flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
+                  <Users2 className="w-7 h-7" />
+                </div>
+                <span className="bg-indigo-100 text-indigo-800 text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-full border border-indigo-200">
+                  Personal Autorizado
+                </span>
+              </div>
+              <div className="pt-4">
+                <div className="text-xs uppercase tracking-wider text-indigo-700 font-extrabold">
+                  Supervisión y Control
+                </div>
+                <CardTitle className="text-2xl font-black text-slate-900 mt-1">
+                  Encargados
+                </CardTitle>
+              </div>
+            </CardHeader>
+
+            <CardContent className="space-y-4">
+              <CardDescription className="text-xs sm:text-sm text-slate-600 leading-relaxed">
+                Acceso con credenciales protegidas para <strong>Docentes de Aula</strong> (acreditación y mesas) y <strong>Administradores</strong> (configuración y escrutinio).
+              </CardDescription>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-black text-indigo-700 group-hover:text-indigo-800">
+                <span className="flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 text-amber-500" />
+                  Seleccionar Docente o Administrador
+                </span>
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-1.5 transition-transform" />
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
+
+      {/* SECCIÓN SEPARADA: LISTADO PÚBLICO (PANTALLA DE PUERTA / CONSULTA PADRÓN) */}
+      <div className="pt-2">
+        <div
+          onClick={() => navigate('/puerta')}
+          className="p-5 rounded-2xl border-2 border-slate-200 hover:border-slate-400 bg-white shadow-xs hover:shadow-md cursor-pointer transition-all flex flex-col sm:flex-row items-center justify-between gap-4 group"
+        >
+          <div className="flex items-center space-x-3.5">
+            <div className="w-11 h-11 rounded-xl bg-slate-100 group-hover:bg-indigo-100 text-slate-700 group-hover:text-indigo-700 flex items-center justify-center shrink-0 transition-colors">
+              <Monitor className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-black text-slate-900">
+                  Consulta Pública de Padrón y Aulas
+                </h3>
+                <span className="text-[10px] bg-slate-100 text-slate-600 font-bold px-2 py-0.5 rounded-full border border-slate-200">
+                  Acceso Público • Pantalla Puerta
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Consulta en qué mesa y pabellón te corresponde votar buscando por DNI. No expone ningún dato del voto (Invariante I1).
+              </p>
+            </div>
+          </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-xs font-bold text-slate-700 group-hover:text-indigo-700 group-hover:border-indigo-300 shrink-0"
+          >
+            <Search className="w-3.5 h-3.5 mr-1.5" />
+            Ver Padrón Público
+          </Button>
+        </div>
+      </div>
+
+      {/* MODAL: SELECCIONAR ENCARGADO (DOCENTE O ADMINISTRADOR) */}
+      {showModalEncargados && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <Card className="max-w-lg w-full bg-white shadow-2xl animate-in fade-in zoom-in-95 border-2 border-slate-200 overflow-hidden">
+            <CardHeader className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white pb-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <KeyRound className="w-5 h-5 text-indigo-400" />
+                  <CardTitle className="text-lg font-black text-white">
+                    Acceso para Encargados
+                  </CardTitle>
+                </div>
+                <button
+                  onClick={() => setShowModalEncargados(false)}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <CardDescription className="text-xs text-indigo-200 mt-1">
+                Selecciona tu rol electoral autorizado para ingresar a tu panel correspondiente
+              </CardDescription>
+            </CardHeader>
+
+            <CardContent className="p-6 space-y-4">
+              {/* Opción A: Docente de Mesa */}
+              <div
+                onClick={() => {
+                  setShowModalEncargados(false);
+                  navigate('/docente');
+                }}
+                className="p-4 rounded-xl border-2 border-emerald-200 hover:border-emerald-500 bg-emerald-50/30 hover:bg-emerald-50/80 cursor-pointer transition-all flex items-center justify-between group"
+              >
+                <div className="flex items-center space-x-3.5">
+                  <div className="w-12 h-12 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-sm">
+                    <School className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-base font-black text-slate-900">Docente de Mesa / Aula</h4>
+                      <span className="text-[10px] font-mono bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
+                        2FA TOTP
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 mt-0.5">
+                      Acreditación de electores, escaneo de DNI con cámara y supervisión de puestos de su salón.
+                    </p>
+                  </div>
+                </div>
+                <ArrowRight className="w-5 h-5 text-emerald-700 group-hover:translate-x-1 transition-transform shrink-0 ml-3" />
+              </div>
+
+              {/* Opción B: Administrador Electoral */}
+              <div
+                onClick={() => {
+                  setShowModalEncargados(false);
+                  navigate(isAdmin ? '/admin' : '/admin/login');
+                }}
+                className="p-4 rounded-xl border-2 border-slate-300 hover:border-slate-800 bg-slate-50/50 hover:bg-slate-100/80 cursor-pointer transition-all flex items-center justify-between group"
+              >
+                <div className="flex items-center space-x-3.5">
+                  <div className="w-12 h-12 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-sm">
+                    <ShieldCheck className="w-6 h-6 text-blue-400" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-base font-black text-slate-900">Administrador Electoral</h4>
+                      <span className="text-[10px] font-mono bg-slate-200 text-slate-800 font-bold px-2 py-0.5 rounded-full">
+                        {isAdmin ? 'Sesión Activa' : 'Protegido'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 mt-0.5">
+                      Ciclo de vida electoral, configuración de mesas, padrón CSV, auditoría y cómputo oficial.
+                    </p>
+                  </div>
+                </div>
+                <ArrowRight className="w-5 h-5 text-slate-700 group-hover:translate-x-1 transition-transform shrink-0 ml-3" />
+              </div>
+
+              <div className="pt-2 text-center">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowModalEncargados(false)}
+                  className="text-xs text-slate-500 hover:text-slate-800"
+                >
+                  Cancelar y volver al inicio
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
+
