@@ -285,6 +285,53 @@ export const eleccionApiService = {
     }
   },
 
+  async actualizarEleccion(id: string, data: { nombre?: string; descripcion?: string }): Promise<Eleccion> {
+    try {
+      const res = await fetch(`${API_BASE}/admin/elecciones/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'x-actor-id': 'admin' },
+        body: JSON.stringify(data),
+      });
+
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({ message: 'Error al actualizar elección' }));
+        throw new Error(error.message || 'No se pudo actualizar la información de la elección');
+      }
+
+      const actualizada = await res.json();
+      localStorage.setItem('eleccion_activa', JSON.stringify(actualizada));
+      return actualizada;
+    } catch (err: any) {
+      if (err.message && !err.message.includes('Failed to fetch')) {
+        throw err;
+      }
+      // Fallback local
+      const saved = localStorage.getItem('eleccion_activa');
+      const base = saved ? JSON.parse(saved) : ELECCION_INICIAL_DEFAULT;
+      const updated = {
+        ...base,
+        ...(data.nombre ? { nombre: data.nombre } : {}),
+        ...(data.descripcion !== undefined ? { descripcion: data.descripcion } : {}),
+      };
+      localStorage.setItem('eleccion_activa', JSON.stringify(updated));
+      return updated;
+    }
+  },
+
+  async eliminarEleccion(id: string): Promise<{ success: boolean; message: string; id: string }> {
+    const res = await fetch(`${API_BASE}/admin/elecciones/${id}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', 'x-actor-id': 'admin' },
+    });
+
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ message: 'Error al eliminar la elección' }));
+      throw new Error(error.message || 'No se pudo eliminar la elección seleccionada');
+    }
+
+    return await res.json();
+  },
+
   async obtenerAuditoria(id: string) {
     try {
       const res = await fetch(`${API_BASE}/admin/elecciones/${id}/auditoria`);

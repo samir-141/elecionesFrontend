@@ -22,6 +22,8 @@ import {
   RotateCcw,
   PlusCircle,
   Award,
+  Edit2,
+  Trash2,
 } from 'lucide-react';
 
 interface Props {
@@ -29,6 +31,8 @@ interface Props {
   onAbrir: () => Promise<void>;
   onCerrar: () => Promise<void>;
   onReaperturar?: () => Promise<void>;
+  onEditar?: () => void;
+  onEliminar?: () => void;
   onCrearNueva?: (params: {
     nombre: string;
     descripcion?: string;
@@ -44,6 +48,8 @@ export function CicloVidaPanel({
   onAbrir,
   onCerrar,
   onReaperturar,
+  onEditar,
+  onEliminar,
   onCrearNueva,
   onIrAEscrutinio,
 }: Props) {
@@ -217,7 +223,29 @@ export function CicloVidaPanel({
               <CardTitle className="text-xl font-black text-slate-900">Ciclo de Vida de la Elección</CardTitle>
               <CardDescription>Transición formal de estados y control de apertura</CardDescription>
             </div>
-            <div>
+            <div className="flex flex-wrap items-center gap-2">
+              {onEditar && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onEditar}
+                  className="text-xs font-semibold text-slate-700 hover:text-slate-900 border-slate-300"
+                >
+                  <Edit2 className="w-3.5 h-3.5 mr-1 text-blue-700" />
+                  Editar
+                </Button>
+              )}
+              {onEliminar && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onEliminar}
+                  className="text-xs font-semibold text-rose-700 hover:text-rose-900 border-rose-200 bg-rose-50 hover:bg-rose-100"
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1 text-rose-600" />
+                  Eliminar
+                </Button>
+              )}
               <Badge
                 variant={
                   eleccion.estado === 'ABIERTA'

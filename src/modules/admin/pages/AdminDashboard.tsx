@@ -8,7 +8,7 @@ import { AulasManager } from '../components/AulasManager';
 import { PartidosManager } from '../components/PartidosManager';
 import { PadronImportador } from '../components/PadronImportador';
 import { EscrutinioPanel } from '../components/EscrutinioPanel';
-import { Shield, Sliders, Activity, RefreshCw, School, Flag, Award, ChevronDown, FileSpreadsheet } from 'lucide-react';
+import { Shield, Sliders, Activity, RefreshCw, School, Flag, Award, ChevronDown, FileSpreadsheet, Edit2, Trash2, AlertTriangle, CheckCircle2, X } from 'lucide-react';
 
 interface Props {
   onVerPantallaPuerta?: (aulaId: string) => void;
@@ -32,6 +32,19 @@ export function AdminDashboard({ onVerPantallaPuerta }: Props) {
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<'ciclo' | 'reglas' | 'aulas' | 'partidos' | 'padron' | 'escrutinio' | 'auditoria'>('ciclo');
   const [loading, setLoading] = useState(true);
+
+  // Estados para Modal de Edición de Elección
+  const [showModalEditar, setShowModalEditar] = useState(false);
+  const [editNombre, setEditNombre] = useState('');
+  const [editDescripcion, setEditDescripcion] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  // Estados para Modal de Eliminación de Elección
+  const [showModalEliminar, setShowModalEliminar] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  // Mensaje de notificación / feedback
+  const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const cargarListaElecciones = async () => {
     try {
@@ -144,6 +157,74 @@ export function AdminDashboard({ onVerPantallaPuerta }: Props) {
     await cargarDatos(eleccion.id);
   };
 
+  const abrirModalEditar = () => {
+    setEditNombre(eleccion.nombre);
+    setEditDescripcion(eleccion.descripcion || '');
+    setShowModalEditar(true);
+  };
+
+  const handleGuardarEdicion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editNombre.trim()) {
+      setFeedbackMessage({ type: 'error', text: 'El nombre de la elección no puede estar vacío.' });
+      return;
+    }
+
+    try {
+      setSavingEdit(true);
+      const actualizada = await eleccionApiService.actualizarEleccion(eleccion.id, {
+        nombre: editNombre.trim(),
+        descripcion: editDescripcion.trim(),
+      });
+      setEleccion(actualizada);
+      await cargarListaElecciones();
+      setShowModalEditar(false);
+      setFeedbackMessage({ type: 'success', text: 'Datos de la elección actualizados correctamente.' });
+      setTimeout(() => setFeedbackMessage(null), 4000);
+    } catch (err: any) {
+      setFeedbackMessage({ type: 'error', text: err.message || 'Error al actualizar la elección.' });
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleConfirmarEliminar = async () => {
+    if (eleccion.estado === 'ABIERTA') {
+      setFeedbackMessage({
+        type: 'error',
+        text: 'No es posible eliminar una elección en curso (ABIERTA). Debe cerrarla previamente.',
+      });
+      return;
+    }
+
+    try {
+      setDeleting(true);
+      await eleccionApiService.eliminarEleccion(eleccion.id);
+
+      // Obtener lista actualizada
+      const listaRestante = await eleccionApiService.listarElecciones();
+      setTodasElecciones(listaRestante || []);
+
+      setShowModalEliminar(false);
+      setFeedbackMessage({
+        type: 'success',
+        text: `La elección "${eleccion.nombre}" fue eliminada exitosamente.`,
+      });
+      setTimeout(() => setFeedbackMessage(null), 4000);
+
+      // Si quedan otras elecciones, seleccionar la primera disponible
+      if (listaRestante && listaRestante.length > 0) {
+        await cargarDatos(listaRestante[0].id);
+      } else {
+        await cargarDatos('activa');
+      }
+    } catch (err: any) {
+      setFeedbackMessage({ type: 'error', text: err.message || 'Error al eliminar la elección.' });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center p-12 text-slate-500 text-sm">
@@ -154,6 +235,32 @@ export function AdminDashboard({ onVerPantallaPuerta }: Props) {
 
   return (
     <div className="space-y-6">
+      {/* Banner de Feedback si existe */}
+      {feedbackMessage && (
+        <div
+          className={`p-4 rounded-xl border flex items-center justify-between gap-3 text-sm font-medium animate-in fade-in ${
+            feedbackMessage.type === 'success'
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+              : 'bg-rose-50 border-rose-200 text-rose-900'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {feedbackMessage.type === 'success' ? (
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+            ) : (
+              <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0" />
+            )}
+            <span>{feedbackMessage.text}</span>
+          </div>
+          <button
+            onClick={() => setFeedbackMessage(null)}
+            className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Encabezado del Panel Institucional */}
       <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -180,9 +287,9 @@ export function AdminDashboard({ onVerPantallaPuerta }: Props) {
           <p className="text-sm text-slate-500 mt-1">{eleccion.descripcion || 'Proceso electoral institucional'}</p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5 self-start md:self-center">
-          {/* Selector de Elecciones si existen varias */}
-          {todasElecciones.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2 self-start md:self-center">
+          {/* Selector de Elecciones */}
+          {todasElecciones.length > 0 && (
             <div className="relative">
               <select
                 aria-label="Seleccionar proceso electoral"
@@ -200,12 +307,34 @@ export function AdminDashboard({ onVerPantallaPuerta }: Props) {
             </div>
           )}
 
+          {/* Botón Editar Elección */}
+          <button
+            onClick={abrirModalEditar}
+            title="Editar nombre y descripción de este proceso electoral"
+            className="inline-flex items-center text-xs font-semibold text-slate-700 hover:text-slate-900 border border-slate-300 bg-white hover:bg-slate-50 rounded-lg px-3 py-2 transition-colors cursor-pointer shadow-2xs"
+          >
+            <Edit2 className="w-3.5 h-3.5 mr-1.5 text-blue-700" />
+            Editar
+          </button>
+
+          {/* Botón Eliminar Elección */}
+          <button
+            onClick={() => setShowModalEliminar(true)}
+            title="Eliminar este proceso electoral y sus datos asociados"
+            className="inline-flex items-center text-xs font-semibold text-rose-700 hover:text-rose-900 border border-rose-200 bg-rose-50 hover:bg-rose-100 rounded-lg px-3 py-2 transition-colors cursor-pointer shadow-2xs"
+          >
+            <Trash2 className="w-3.5 h-3.5 mr-1.5 text-rose-600" />
+            Eliminar
+          </button>
+
+          {/* Botón Actualizar Estado */}
           <button
             onClick={() => cargarDatos()}
-            className="inline-flex items-center text-xs font-medium text-slate-600 hover:text-slate-900 border border-slate-200 bg-slate-50 hover:bg-slate-100 rounded-lg px-3 py-2 transition-colors"
+            title="Recargar datos del proceso"
+            className="inline-flex items-center text-xs font-medium text-slate-600 hover:text-slate-900 border border-slate-200 bg-slate-50 hover:bg-slate-100 rounded-lg px-3 py-2 transition-colors cursor-pointer"
           >
             <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
-            Actualizar Estado
+            Actualizar
           </button>
         </div>
       </div>
@@ -305,6 +434,8 @@ export function AdminDashboard({ onVerPantallaPuerta }: Props) {
             onAbrir={handleAbrir}
             onCerrar={handleCerrar}
             onReaperturar={handleReaperturar}
+            onEditar={abrirModalEditar}
+            onEliminar={() => setShowModalEliminar(true)}
             onCrearNueva={handleCrearNueva}
             onIrAEscrutinio={() => setActiveTab('escrutinio')}
           />
@@ -355,6 +486,153 @@ export function AdminDashboard({ onVerPantallaPuerta }: Props) {
 
         {activeTab === 'auditoria' && <AuditoriaTabla logs={auditLogs} />}
       </div>
+
+      {/* Modal Editar Elección */}
+      {showModalEditar && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-900 flex items-center justify-center">
+                  <Edit2 className="w-5 h-5 text-blue-800" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Editar Proceso Electoral</h3>
+                  <p className="text-xs text-slate-500">Modifica los datos institucionales de esta elección</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowModalEditar(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleGuardarEdicion} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Nombre de la Elección *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editNombre}
+                  onChange={(e) => setEditNombre(e.target.value)}
+                  placeholder="Ej. Elección Municipio Escolar 2026"
+                  className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm font-semibold text-slate-800 focus:ring-2 focus:ring-blue-600 focus:outline-hidden"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Descripción / Propósito
+                </label>
+                <textarea
+                  rows={3}
+                  value={editDescripcion}
+                  onChange={(e) => setEditDescripcion(e.target.value)}
+                  placeholder="Descripción de la convocatoria o directiva estudiantil..."
+                  className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-sm text-slate-800 focus:ring-2 focus:ring-blue-600 focus:outline-hidden"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowModalEditar(false)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingEdit || !editNombre.trim()}
+                  className="px-5 py-2 text-xs font-bold text-white bg-blue-900 hover:bg-blue-800 rounded-xl shadow-xs transition-colors disabled:opacity-50 cursor-pointer"
+                >
+                  {savingEdit ? 'Guardando...' : 'Guardar Cambios'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Eliminar Elección */}
+      {showModalEliminar && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-rose-200 animate-in fade-in zoom-in-95">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-800 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5 text-rose-700" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">¿Eliminar este Proceso Electoral?</h3>
+                <p className="text-xs text-slate-500">Acción permanente e irreversible</p>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 mb-4 space-y-2">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-500 font-medium">Elección a eliminar:</span>
+                <span className="font-bold text-slate-900">{eleccion.nombre}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-500 font-medium">Estado actual:</span>
+                <span className="font-bold px-2 py-0.5 rounded-full text-[11px] bg-slate-200 text-slate-800">
+                  {eleccion.estado}
+                </span>
+              </div>
+            </div>
+
+            {eleccion.estado === 'ABIERTA' ? (
+              <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs mb-5 space-y-1">
+                <div className="flex items-center font-bold gap-1.5 text-amber-800">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
+                  <span>Elección en Curso (ABIERTA)</span>
+                </div>
+                <p>
+                  No es posible eliminar una elección con sufragios activos. Debe cerrarla previamente en la pestaña <strong>Ciclo de Vida</strong> para resguardar la consistencia de los kioscos de votación.
+                </p>
+              </div>
+            ) : (
+              <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs mb-5 space-y-2">
+                <div className="flex items-center font-bold gap-1.5 text-rose-800">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+                  <span>Advertencia de Eliminación Completa</span>
+                </div>
+                <p>
+                  Al confirmar, se eliminarán de forma definitiva todos los registros vinculados a esta elección:
+                </p>
+                <ul className="list-disc pl-5 space-y-0.5 text-rose-800 text-[11px]">
+                  <li>Aulas y puestos de votación vinculados</li>
+                  <li>Listas partidarias inscritas</li>
+                  <li>Padrón de estudiantes y asignaciones docentes</li>
+                  <li>Urnas de sufragio, actas de escrutinio y auditorías</li>
+                </ul>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowModalEliminar(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmarEliminar}
+                disabled={deleting || eleccion.estado === 'ABIERTA'}
+                className="px-5 py-2 text-xs font-bold text-white bg-rose-700 hover:bg-rose-800 rounded-xl shadow-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              >
+                {deleting ? 'Eliminando...' : 'Sí, Eliminar Permanentemente'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
