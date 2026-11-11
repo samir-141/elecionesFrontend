@@ -185,15 +185,28 @@ export function CedulaVotacion({ tokenVoto, onVotoFinalizado }: CedulaVotacionPr
 
               {/* Contenido Visual */}
               <div className="my-3 flex flex-col items-center space-y-2">
-                <div
-                  className={`w-16 h-16 rounded-2xl flex items-center justify-center font-black text-xl shadow-inner ${
-                    isBlanco
-                      ? 'bg-slate-100 border-2 border-dashed border-slate-300 text-slate-400'
-                      : 'bg-blue-100 text-blue-800'
-                  }`}
-                >
-                  {isBlanco ? '⚪' : opcion.numero_lista}
-                </div>
+                {!isBlanco && opcion.logo_url ? (
+                  <div className="w-16 h-16 rounded-2xl border border-slate-200 bg-white shadow-inner overflow-hidden flex items-center justify-center p-1">
+                    <img
+                      src={opcion.logo_url}
+                      alt={opcion.nombre}
+                      className="w-full h-full object-contain"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div
+                    className={`w-16 h-16 rounded-2xl flex items-center justify-center font-black text-xl shadow-inner ${
+                      isBlanco
+                        ? 'bg-slate-100 border-2 border-dashed border-slate-300 text-slate-400'
+                        : 'bg-blue-100 text-blue-800'
+                    }`}
+                  >
+                    {isBlanco ? '⚪' : opcion.numero_lista}
+                  </div>
+                )}
 
                 <div className="text-base font-black text-slate-900 leading-tight">
                   {opcion.nombre}
@@ -201,6 +214,28 @@ export function CedulaVotacion({ tokenVoto, onVotoFinalizado }: CedulaVotacionPr
 
                 {opcion.lema && (
                   <p className="text-xs text-slate-500 italic max-w-xs">{opcion.lema}</p>
+                )}
+
+                {!isBlanco && opcion.candidatos && opcion.candidatos.length > 0 && (
+                  <div className="flex flex-wrap items-center justify-center gap-1.5 pt-1">
+                    {opcion.candidatos.map((cand) => (
+                      <div
+                        key={cand.id}
+                        className="inline-flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200 text-[10px] text-slate-700 font-semibold"
+                      >
+                        {cand.foto_url && (
+                          <img
+                            src={cand.foto_url}
+                            alt={cand.nombres}
+                            className="w-4 h-4 rounded-full object-cover"
+                          />
+                        )}
+                        <span>
+                          {cand.nombres.split(' ')[0]} {cand.apellidos.split(' ')[0]}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
 

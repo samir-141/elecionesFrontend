@@ -501,7 +501,13 @@ export const eleccionApiService = {
 
   async crearPartido(
     eleccionId: string,
-    partidoData: { numero_lista: number; nombre: string; lema?: string; logo_url?: string },
+    partidoData: {
+      numero_lista: number;
+      nombre: string;
+      lema?: string;
+      logo_url?: string | null;
+      logo_media_id?: string | null;
+    },
   ): Promise<any> {
     const res = await fetch(`${API_BASE}/admin/elecciones/${eleccionId}/partidos`, {
       method: 'POST',
@@ -516,6 +522,72 @@ export const eleccionApiService = {
       throw new Error(err.message || 'Error al inscribir lista partidaria en el servidor');
     }
     return await res.json();
+  },
+
+  async agregarCandidato(
+    partidoId: string,
+    data: {
+      nombres: string;
+      apellidos: string;
+      cargo: string;
+      orden?: number;
+      foto_url?: string | null;
+      foto_media_id?: string | null;
+    },
+  ): Promise<any> {
+    const res = await fetch(`${API_BASE}/admin/partidos/${partidoId}/candidatos`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'admin',
+      },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'Error al registrar candidato' }));
+      throw new Error(err.message || 'No se pudo registrar al candidato');
+    }
+    return await res.json();
+  },
+
+  async actualizarCandidato(
+    candidatoId: string,
+    data: {
+      nombres?: string;
+      apellidos?: string;
+      cargo?: string;
+      orden?: number;
+      foto_url?: string | null;
+      foto_media_id?: string | null;
+    },
+  ): Promise<any> {
+    const res = await fetch(`${API_BASE}/admin/candidatos/${candidatoId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'admin',
+      },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'Error al actualizar candidato' }));
+      throw new Error(err.message || 'No se pudo actualizar al candidato');
+    }
+    return await res.json();
+  },
+
+  async eliminarCandidato(candidatoId: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/admin/candidatos/${candidatoId}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-id': 'admin',
+      },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'Error al eliminar candidato' }));
+      throw new Error(err.message || 'No se pudo eliminar al candidato');
+    }
   },
 
   async obtenerPartidos(eleccionId: string): Promise<any[]> {

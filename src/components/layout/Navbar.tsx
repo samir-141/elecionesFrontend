@@ -1,5 +1,8 @@
+import { useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { eleccionApiService } from '../../modules/admin/services/eleccion.service';
+import { imageUpdateService } from '../../services/images/image-update.service';
+import { ConfiguracionInstitucional } from '../../types';
 import {
   Vote,
   Monitor,
@@ -16,6 +19,13 @@ export function Navbar() {
   const navigate = useNavigate();
   const isAdmin = eleccionApiService.isAdminAuthenticated();
   const adminUser = eleccionApiService.getAdminUser();
+  const [institucion, setInstitucion] = useState<ConfiguracionInstitucional | null>(null);
+
+  useEffect(() => {
+    imageUpdateService.obtenerInstitucionalPublica().then((res) => {
+      if (res?.institucion) setInstitucion(res.institucion);
+    });
+  }, []);
 
   const handleLogoutAdmin = () => {
     eleccionApiService.logoutAdmin();
@@ -28,15 +38,25 @@ export function Navbar() {
         <div className="flex items-center justify-between h-16">
           {/* Logo e Identidad Institucional */}
           <NavLink to="/" className="flex items-center space-x-3 group">
-            <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-black shadow-md group-hover:bg-blue-500 transition-colors">
-              <Vote className="w-5 h-5" />
-            </div>
+            {institucion?.logo_url ? (
+              <div className="w-10 h-10 rounded-xl bg-white p-1 flex items-center justify-center shadow-md overflow-hidden shrink-0">
+                <img
+                  src={institucion.logo_url}
+                  alt={institucion.nombre_institucion}
+                  className="w-full h-full object-contain"
+                />
+              </div>
+            ) : (
+              <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white font-black shadow-md group-hover:bg-blue-500 transition-colors">
+                <Vote className="w-5 h-5" />
+              </div>
+            )}
             <div>
               <div className="text-[10px] uppercase tracking-wider text-blue-400 font-bold">
-                Sistema Electoral Escolar
+                {institucion?.subtitulo || 'Sistema Electoral Escolar'}
               </div>
               <h1 className="text-sm sm:text-base font-black tracking-tight text-white leading-tight">
-                Municipio Estudiantil
+                {institucion?.nombre_institucion || 'Municipio Estudiantil'}
               </h1>
             </div>
           </NavLink>

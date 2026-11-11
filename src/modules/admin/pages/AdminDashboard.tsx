@@ -8,7 +8,8 @@ import { AulasManager } from '../components/AulasManager';
 import { PartidosManager } from '../components/PartidosManager';
 import { PadronImportador } from '../components/PadronImportador';
 import { EscrutinioPanel } from '../components/EscrutinioPanel';
-import { Shield, Sliders, Activity, RefreshCw, School, Flag, Award, ChevronDown, FileSpreadsheet, Edit2, Trash2, AlertTriangle, CheckCircle2, X } from 'lucide-react';
+import { ImageManagerPanel } from '../../../components/admin/image-manager/ImageManagerPanel';
+import { Shield, Sliders, Activity, RefreshCw, School, Flag, Award, ChevronDown, FileSpreadsheet, Edit2, Trash2, AlertTriangle, CheckCircle2, X, Image as ImageIcon } from 'lucide-react';
 
 interface Props {
   onVerPantallaPuerta?: (aulaId: string) => void;
@@ -30,7 +31,7 @@ export function AdminDashboard({ onVerPantallaPuerta }: Props) {
   const [aulas, setAulas] = useState<Aula[]>(AULAS_DEFAULT);
   const [partidos, setPartidos] = useState<Partido[]>(PARTIDOS_DEFAULT);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'ciclo' | 'reglas' | 'aulas' | 'partidos' | 'padron' | 'escrutinio' | 'auditoria'>('ciclo');
+  const [activeTab, setActiveTab] = useState<'ciclo' | 'reglas' | 'aulas' | 'partidos' | 'imagenes' | 'padron' | 'escrutinio' | 'auditoria'>('ciclo');
   const [loading, setLoading] = useState(true);
 
   // Estados para Modal de Edición de Elección
@@ -152,7 +153,13 @@ export function AdminDashboard({ onVerPantallaPuerta }: Props) {
     await cargarDatos(eleccion.id);
   };
 
-  const handleCrearPartido = async (partidoData: { numero_lista: number; nombre: string; lema?: string; logo_url?: string }) => {
+  const handleCrearPartido = async (partidoData: {
+    numero_lista: number;
+    nombre: string;
+    lema?: string;
+    logo_url?: string | null;
+    logo_media_id?: string | null;
+  }) => {
     await eleccionApiService.crearPartido(eleccion.id, partidoData);
     await cargarDatos(eleccion.id);
   };
@@ -390,6 +397,18 @@ export function AdminDashboard({ onVerPantallaPuerta }: Props) {
         </button>
 
         <button
+          onClick={() => setActiveTab('imagenes')}
+          className={`flex items-center space-x-2 px-4 py-3 font-semibold text-sm border-b-2 whitespace-nowrap transition-colors ${
+            activeTab === 'imagenes'
+              ? 'border-blue-900 text-blue-900'
+              : 'border-transparent text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          <ImageIcon className="w-4 h-4" />
+          <span>Imágenes & Storage</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('padron')}
           className={`flex items-center space-x-2 px-4 py-3 font-semibold text-sm border-b-2 whitespace-nowrap transition-colors ${
             activeTab === 'padron'
@@ -459,9 +478,17 @@ export function AdminDashboard({ onVerPantallaPuerta }: Props) {
         {activeTab === 'partidos' && (
           <PartidosManager
             partidos={partidos}
+            eleccionId={eleccion.id}
             eleccionEstado={eleccion.estado}
             onCrearPartido={handleCrearPartido}
             onActualizar={cargarDatos}
+          />
+        )}
+
+        {activeTab === 'imagenes' && (
+          <ImageManagerPanel
+            eleccionId={eleccion.id}
+            onDataChanged={() => cargarDatos(eleccion.id)}
           />
         )}
 

@@ -6,6 +6,13 @@ export interface OpcionCedula {
   nombre: string;
   lema: string | null;
   logo_url: string | null;
+  candidatos?: Array<{
+    id: string;
+    nombres: string;
+    apellidos: string;
+    cargo: string;
+    foto_url: string | null;
+  }>;
 }
 
 export interface CedulaResponse {

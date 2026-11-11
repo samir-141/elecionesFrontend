@@ -36,6 +36,18 @@ export interface Aula {
   capacidad: number;
 }
 
+export interface Candidato {
+  id: string;
+  eleccion_id: string;
+  partido_id: string;
+  nombres: string;
+  apellidos: string;
+  cargo: string;
+  orden: number;
+  foto_url: string | null;
+  foto_media_id?: string | null;
+}
+
 export interface Partido {
   id: string;
   eleccion_id: string;
@@ -43,6 +55,58 @@ export interface Partido {
   nombre: string;
   lema: string | null;
   logo_url: string | null;
+  logo_media_id?: string | null;
+  candidatos?: Candidato[];
+}
+
+export type MediaCategoria =
+  | 'candidatos'
+  | 'listas'
+  | 'organizaciones'
+  | 'instituciones'
+  | 'usuarios'
+  | 'material-electoral';
+
+export interface MediaUsageRef {
+  tipo: 'partido' | 'candidato' | 'docente' | 'eleccion' | 'institucion';
+  id: string;
+  etiqueta: string;
+}
+
+export interface ArchivoMedia {
+  id: string;
+  nombre_original: string;
+  nombre_interno: string;
+  bucket: string;
+  ruta_archivo: string;
+  url_publica: string | null;
+  url_visualizacion: string | null;
+  es_privado: boolean;
+  mime_type: string;
+  tamano_bytes: number;
+  checksum_sha256?: string | null;
+  categoria: MediaCategoria;
+  entidad_tipo?: string | null;
+  entidad_id?: string | null;
+  eleccion_id?: string | null;
+  subido_por: string;
+  alt_text?: string | null;
+  en_uso: boolean;
+  usado_en: MediaUsageRef[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConfiguracionInstitucional {
+  id?: string;
+  clave: string;
+  nombre_institucion: string;
+  subtitulo: string;
+  titulo_portada: string;
+  logo_url: string | null;
+  logo_media_id?: string | null;
+  banner_url: string | null;
+  banner_media_id?: string | null;
 }
 
 export interface Puesto {
@@ -70,5 +134,12 @@ export interface OpcionCedula {
   nombre: string;
   lema?: string | null;
   logo_url?: string | null;
+  candidatos?: Array<{
+    id: string;
+    nombres: string;
+    apellidos: string;
+    cargo: string;
+    foto_url: string | null;
+  }>;
 }
 

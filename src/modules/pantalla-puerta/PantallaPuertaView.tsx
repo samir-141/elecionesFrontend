@@ -1,5 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Search, School, Users, ShieldAlert } from 'lucide-react';
+import { imageUpdateService } from '../../services/images/image-update.service';
+import { ConfiguracionInstitucional } from '../../types';
 
 interface ElectorPuerta {
   id: string;
@@ -31,6 +33,13 @@ const ELECTORES_DEMO: ElectorPuerta[] = [
 
 export function PantallaPuertaView({ aulaNumero = 1, aulaNombre = 'Aula 1 (Pabellón A)' }: Props) {
   const [busqueda, setBusqueda] = useState('');
+  const [institucion, setInstitucion] = useState<ConfiguracionInstitucional | null>(null);
+
+  useEffect(() => {
+    imageUpdateService.obtenerInstitucionalPublica().then((res) => {
+      if (res?.institucion) setInstitucion(res.institucion);
+    });
+  }, []);
 
   const filtrados = ELECTORES_DEMO.filter((e) =>
     `${e.apellidos} ${e.nombres}`.toLowerCase().includes(busqueda.toLowerCase())
@@ -41,6 +50,15 @@ export function PantallaPuertaView({ aulaNumero = 1, aulaNombre = 'Aula 1 (Pabel
       {/* Encabezado Cívico Institucional para TV / Monitor */}
       <header className="border-b border-slate-800 pb-6 mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center space-x-4">
+          {institucion?.logo_url && (
+            <div className="w-16 h-16 rounded-2xl bg-white p-1.5 flex items-center justify-center shadow-lg overflow-hidden shrink-0">
+              <img
+                src={institucion.logo_url}
+                alt={institucion.nombre_institucion}
+                className="w-full h-full object-contain"
+              />
+            </div>
+          )}
           <div className="w-16 h-16 rounded-2xl bg-blue-600 flex items-center justify-center font-black text-2xl shadow-lg">
             #{aulaNumero}
           </div>
@@ -49,7 +67,7 @@ export function PantallaPuertaView({ aulaNumero = 1, aulaNombre = 'Aula 1 (Pabel
               Pantalla Pública de Asignación de Aula
             </div>
             <h1 className="text-3xl font-black tracking-tight text-white">{aulaNombre}</h1>
-            <p className="text-sm text-slate-400">Elección Municipio Escolar 2026</p>
+            <p className="text-sm text-slate-400">{institucion?.titulo_portada || 'Elección Municipio Escolar 2026'}</p>
           </div>
         </div>
 

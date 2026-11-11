@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -16,24 +16,45 @@ import {
   Search,
 } from 'lucide-react';
 import { eleccionApiService } from '../modules/admin/services/eleccion.service';
+import { imageUpdateService } from '../services/images/image-update.service';
+import { ConfiguracionInstitucional } from '../types';
 
 export function HomePage() {
   const navigate = useNavigate();
   const isAdmin = eleccionApiService.isAdminAuthenticated();
   const [showModalEncargados, setShowModalEncargados] = useState(false);
+  const [institucion, setInstitucion] = useState<ConfiguracionInstitucional | null>(null);
+  const [materialCampana, setMaterialCampana] = useState<
+    Array<{ id: string; nombre_original: string; url_publica: string; alt_text: string | null }>
+  >([]);
+
+  useEffect(() => {
+    imageUpdateService.obtenerInstitucionalPublica().then((res) => {
+      if (res?.institucion) setInstitucion(res.institucion);
+      if (res?.material_electoral) setMaterialCampana(res.material_electoral);
+    });
+  }, []);
 
   return (
     <div className="max-w-5xl mx-auto space-y-8 py-6 px-3 sm:px-4">
       {/* Banner Principal Institucional */}
-      <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white p-6 sm:p-10 rounded-3xl shadow-xl text-center space-y-4">
-        <div className="inline-flex items-center space-x-2 bg-blue-500/20 border border-blue-400/30 px-4 py-1.5 rounded-full text-blue-300 text-xs font-bold uppercase tracking-wider">
-          <ShieldCheck className="w-4 h-4 text-emerald-400" />
-          <span>Plataforma Cívica Escolar • Arquitectura Segura</span>
-        </div>
+      <div className="relative overflow-hidden bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white p-6 sm:p-10 rounded-3xl shadow-xl text-center space-y-4">
+        {institucion?.banner_url && (
+          <img
+            src={institucion.banner_url}
+            alt={institucion.titulo_portada || 'Banner Electoral'}
+            className="absolute inset-0 w-full h-full object-cover opacity-20 pointer-events-none"
+          />
+        )}
+        <div className="relative z-10 space-y-4">
+          <div className="inline-flex items-center space-x-2 bg-blue-500/20 border border-blue-400/30 px-4 py-1.5 rounded-full text-blue-300 text-xs font-bold uppercase tracking-wider">
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <span>Plataforma Cívica Escolar • Arquitectura Segura</span>
+          </div>
 
-        <h1 className="text-2xl sm:text-4xl font-black tracking-tight text-white max-w-2xl mx-auto">
-          Elecciones de Municipio Escolar 2026
-        </h1>
+          <h1 className="text-2xl sm:text-4xl font-black tracking-tight text-white max-w-2xl mx-auto">
+            {institucion?.titulo_portada || 'Elecciones de Municipio Escolar 2026'}
+          </h1>
 
         <p className="text-xs sm:text-sm text-slate-300 max-w-xl mx-auto">
           Sistema institucional de voto electrónico presencial con anonimato radical, urna digital de cuatro columnas y verificación criptográfica inmutable.
@@ -49,6 +70,7 @@ export function HomePage() {
           <span className="flex items-center gap-1">
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Huella Criptográfica SHA-256
           </span>
+        </div>
         </div>
       </div>
 
@@ -172,6 +194,37 @@ export function HomePage() {
           </Button>
         </div>
       </div>
+
+      {/* Material Visual y Campaña Electoral (si el admin subió material-electoral) */}
+      {materialCampana.length > 0 && (
+        <div className="space-y-3">
+          <div className="text-center">
+            <h3 className="text-base font-black text-slate-900">Material Informativo y Campaña Electoral</h3>
+            <p className="text-xs text-slate-500">Información visual oficial del proceso democrático estudiantil</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            {materialCampana.map((m) => (
+              <div
+                key={m.id}
+                className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs"
+              >
+                <div className="h-44 bg-slate-100 flex items-center justify-center overflow-hidden">
+                  <img
+                    src={m.url_publica}
+                    alt={m.alt_text || m.nombre_original}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                {(m.alt_text || m.nombre_original) && (
+                  <div className="p-3 text-xs font-semibold text-slate-700 truncate">
+                    {m.alt_text || m.nombre_original}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* MODAL: SELECCIONAR ENCARGADO (DOCENTE O ADMINISTRADOR) */}
       {showModalEncargados && (

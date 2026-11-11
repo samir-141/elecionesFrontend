@@ -48,6 +48,9 @@ export function DocenteLogin({ onLoginSuccess }: Props) {
 
       if (res.ok) {
         const data = await res.json();
+        if (data.token) {
+          sessionStorage.setItem('docente_token', data.token);
+        }
         onLoginSuccess({
           id: data.docente_id,
           username: data.username,
@@ -105,6 +108,9 @@ export function DocenteLogin({ onLoginSuccess }: Props) {
 
       if (res.ok) {
         const data = await res.json();
+        if (data.token) {
+          sessionStorage.setItem('docente_token', data.token);
+        }
         onLoginSuccess({
           id: data.docente_id,
           username: data.username,

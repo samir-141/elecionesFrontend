@@ -31,6 +31,9 @@ import {
   Search,
 } from 'lucide-react';
 import { BrowserQRCodeReader } from '@zxing/browser';
+import { getApiBaseUrl } from '../../../config/api';
+import { uploadWithProgress } from '../../../services/images/image-upload.service';
+import { validateImageFileClient } from '../../../services/images/image-validation.service';
 
 interface PuestoAula {
   id: string;
@@ -115,6 +118,62 @@ export function DocentePanel() {
   const [partidosList, setPartidosList] = useState<any[]>([]);
   const [loadingPartidos, setLoadingPartidos] = useState(false);
 
+  // Avatar privado del docente (URL firmada temporal desde Supabase Storage)
+  const [docenteAvatarUrl, setDocenteAvatarUrl] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+
+  const cargarAvatarDocente = async () => {
+    const token = sessionStorage.getItem('docente_token');
+    if (!token) return;
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/docente/media/avatar`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setDocenteAvatarUrl(data?.url || null);
+      }
+    } catch {
+      // Ignorar silenciosamente si backend o Supabase Storage aún no configurados
+    }
+  };
+
+  const handleSubirAvatarDocente = async (file: File | null) => {
+    if (!file) return;
+    const token = sessionStorage.getItem('docente_token');
+    if (!token) {
+      setAvatarError('Inicia sesión nuevamente para subir tu fotografía de perfil.');
+      return;
+    }
+
+    try {
+      setAvatarError(null);
+      const check = await validateImageFileClient(file);
+      if (!check.valid) {
+        setAvatarError(check.error || 'Archivo inválido.');
+        return;
+      }
+
+      setUploadingAvatar(true);
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const uploaded = await uploadWithProgress<{ url_visualizacion?: string | null }>({
+        url: `${getApiBaseUrl()}/docente/media/avatar`,
+        method: 'POST',
+        formData,
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      setDocenteAvatarUrl(uploaded?.url_visualizacion || null);
+    } catch (err: any) {
+      setAvatarError(err.message || 'No se pudo cargar tu fotografía.');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
   const cargarSalonDocente = async () => {
     if (!docente?.aula?.id) return;
     try {
@@ -144,6 +203,7 @@ export function DocentePanel() {
     if (docente?.aula?.id) {
       cargarSalonDocente();
       cargarPartidosDocente();
+      cargarAvatarDocente();
     }
   }, [docente?.aula?.id]);
 
@@ -376,6 +436,8 @@ export function DocentePanel() {
 
   const handleCerrarSesion = () => {
     sessionStorage.removeItem('docente_auth');
+    sessionStorage.removeItem('docente_token');
+    setDocenteAvatarUrl(null);
     setDocente(null);
   };
 
@@ -390,26 +452,54 @@ export function DocentePanel() {
   return (
     <div className="max-w-lg mx-auto space-y-4 py-2">
       {/* Tarjeta de Aula Asignada */}
-      <div className="bg-emerald-900 text-white p-4 sm:p-5 rounded-2xl shadow-sm flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <div className="w-12 h-12 rounded-xl bg-emerald-800 flex items-center justify-center font-bold text-lg shadow-inner">
-            <School className="w-6 h-6 text-emerald-200" />
+      <div className="bg-emerald-900 text-white p-4 sm:p-5 rounded-2xl shadow-sm space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <label
+              className="relative w-12 h-12 rounded-xl bg-emerald-800 flex items-center justify-center font-bold text-lg shadow-inner overflow-hidden cursor-pointer group border border-emerald-700"
+              title="Cambiar foto de perfil privada del docente"
+            >
+              {docenteAvatarUrl ? (
+                <img src={docenteAvatarUrl} alt={docente.username} className="w-full h-full object-cover" />
+              ) : (
+                <School className="w-6 h-6 text-emerald-200" />
+              )}
+              <span className="absolute inset-0 bg-slate-900/60 text-[9px] font-bold text-white opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                {uploadingAvatar ? '...' : 'Foto'}
+              </span>
+              <input
+                type="file"
+                accept=".jpg,.jpeg,.png,.webp,.svg"
+                className="hidden"
+                disabled={uploadingAvatar}
+                onChange={(e) => handleSubirAvatarDocente(e.target.files?.[0] || null)}
+              />
+            </label>
+            <div>
+              <div className="text-[11px] uppercase tracking-wider text-emerald-300 font-bold">Docente de Aula</div>
+              <h2 className="text-lg font-black">{docente.aula.nombre}</h2>
+              <p className="text-xs text-emerald-200">Usuario: {docente.username}</p>
+            </div>
           </div>
-          <div>
-            <div className="text-[11px] uppercase tracking-wider text-emerald-300 font-bold">Docente de Aula</div>
-            <h2 className="text-lg font-black">{docente.aula.nombre}</h2>
-            <p className="text-xs text-emerald-200">Usuario: {docente.username}</p>
-          </div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleCerrarSesion}
+            className="text-xs border-emerald-700 bg-emerald-800/80 text-emerald-100 hover:bg-emerald-800"
+          >
+            <LogOut className="w-3.5 h-3.5 mr-1" /> Salir
+          </Button>
         </div>
 
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleCerrarSesion}
-          className="text-xs border-emerald-700 bg-emerald-800/80 text-emerald-100 hover:bg-emerald-800"
-        >
-          <LogOut className="w-3.5 h-3.5 mr-1" /> Salir
-        </Button>
+        {avatarError && (
+          <div className="text-[11px] bg-rose-900/60 border border-rose-700 text-rose-100 px-3 py-1.5 rounded-lg flex items-center justify-between">
+            <span>{avatarError}</span>
+            <button onClick={() => setAvatarError(null)} className="ml-2 text-rose-200">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Alerta de Voto Concluido Exitosamente */}
@@ -811,9 +901,19 @@ export function DocentePanel() {
                     key={partido.id}
                     className="p-3.5 rounded-xl border border-slate-200 bg-white hover:border-indigo-300 flex items-start space-x-3.5 shadow-xs"
                   >
-                    <div className="w-10 h-10 rounded-xl bg-indigo-700 text-white flex items-center justify-center font-black text-lg shrink-0">
-                      #{partido.numero_lista}
-                    </div>
+                    {partido.logo_url ? (
+                      <div className="w-11 h-11 rounded-xl border border-slate-200 bg-white overflow-hidden flex items-center justify-center p-1 shrink-0">
+                        <img
+                          src={partido.logo_url}
+                          alt={partido.nombre}
+                          className="w-full h-full object-contain"
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-11 h-11 rounded-xl bg-indigo-700 text-white flex items-center justify-center font-black text-lg shrink-0">
+                        #{partido.numero_lista}
+                      </div>
+                    )}
                     <div className="flex-1">
                       <div className="font-black text-sm text-slate-900">{partido.nombre}</div>
                       {partido.lema && (
@@ -824,6 +924,27 @@ export function DocentePanel() {
                       <div className="mt-2 text-[10px] font-mono font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded inline-block">
                         Lista Oficial #{partido.numero_lista}
                       </div>
+                      {partido.candidatos && partido.candidatos.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {partido.candidatos.map((cand: any) => (
+                            <span
+                              key={cand.id}
+                              className="inline-flex items-center gap-1 text-[10px] bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5 text-slate-700"
+                            >
+                              {cand.foto_url && (
+                                <img
+                                  src={cand.foto_url}
+                                  alt={cand.nombres}
+                                  className="w-4 h-4 rounded-full object-cover"
+                                />
+                              )}
+                              <span>
+                                {cand.nombres} {cand.apellidos} ({cand.cargo})
+                              </span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))
